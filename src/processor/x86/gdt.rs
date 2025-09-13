@@ -1,5 +1,7 @@
 use core::arch::asm;
 
+use crate::screen::vga::VGA_SCREEN;
+
 #[repr(C, align(8))]
 #[derive(Eq, PartialEq, Debug)]
 pub struct GdtEntry(u64);
@@ -24,7 +26,7 @@ impl GdtEntry {
 
     #[inline(always)]
     const fn set_base(&mut self, base: u32) {
-        self.0 |= (base as u64 & 0xFFFF) << 16;
+        self.0 |= (base as u64 & 0xFFFFFF) << 16;
         self.0 |= (base as u64 & 0xFF0000) << 32;
         self.0 |= (base as u64 & 0xFF000000) << 56;
     }
@@ -44,6 +46,11 @@ impl GdtEntry {
 struct GDTR<'a> {
     limit: u16,
     base: &'a [GdtEntry],
+}
+
+#[inline(always)]
+pub const fn segment_selector(rpl: u8, table_indicator: u8, index: u16) -> u16 {
+    return (rpl as u16) | (((table_indicator as u16) & 0b1) << 2) | index << 3;
 }
 
 type GDT = [GdtEntry; 3];
@@ -77,13 +84,42 @@ static GDT: GDT = [
     GdtEntry::new(0xFFFFFFFF, 0, 0b10010010, 0b1100),
 ];
 
+#[inline(never)]
 pub fn install() {
     let gdtr = GDTR {
         limit: (size_of::<GDT>() - 1) as u16,
         base: &GDT,
     };
 
+    let kernel_code_segment_selector = segment_selector(0, 0, 1);
+    let kernel_data_segment_selector = segment_selector(0, 0, 2);
+
     unsafe {
         asm!("lgdt [{}]", in(reg) &gdtr);
+
+        asm!(
+            "mov ax, {0:x}",
+            "mov ds, ax",
+            "mov es, ax",
+            "mov fs, ax",
+            "mov gs, ax",
+            "mov ss, ax",
+            in(reg) kernel_data_segment_selector,
+            options(nostack, preserves_flags)
+        );
+
+        asm!(
+            "call 3f",
+            "jmp 4f",
+            "3:",
+            "pop {tmp}",
+            "push {selector:e}",
+            "push {tmp}",
+            "retf",
+            "4:",
+            selector = in(reg) kernel_code_segment_selector,
+            tmp = out(reg) _,
+            options(preserves_flags),
+        );
     }
 }
