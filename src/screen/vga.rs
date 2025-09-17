@@ -1,8 +1,13 @@
+use core::fmt;
 use core::ptr;
 
 use spin::Mutex;
 
-use crate::{mem::filler, processor::x86::io, text::cp437};
+use crate::{
+    mem::util,
+    processor::x86::{interrupts, io},
+    text::cp437,
+};
 
 const VGA_BUFFER: *mut u8 = 0xb8000 as *mut u8;
 #[allow(dead_code)]
@@ -73,7 +78,7 @@ impl VGAScreen {
     pub fn clear_screen(&mut self) {
         for line in 0..25 {
             unsafe {
-                filler::memsetw(VGA_BUFFER.add(line * 80) as *mut u16, BLANK_CHARACTER, 80);
+                util::memsetw(VGA_BUFFER.add(line * 80) as *mut u16, BLANK_CHARACTER, 80);
             }
         }
 
@@ -105,7 +110,7 @@ impl VGAScreen {
             );
 
             // Clear last line.
-            filler::memsetw(
+            util::memsetw(
                 VGA_BUFFER.add(hidden_line_count + (25 - hidden_line_count)) as *mut u16,
                 BLANK_CHARACTER,
                 80,
@@ -126,4 +131,31 @@ impl VGAScreen {
             io::outportb(VGA_DATA_REGISTER_PORT, index as u8);
         }
     }
+}
+
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => ($crate::screen::vga::_print(format_args!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! println {
+    () => ($crate::print("\n"));
+    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+}
+
+impl fmt::Write for VGAScreen {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.write_string(s);
+        Ok(())
+    }
+}
+
+#[doc(hidden)]
+pub fn _print(args: fmt::Arguments) {
+    use core::fmt::Write;
+
+    interrupts::without_interrupts(|| {
+        VGA_SCREEN.lock().write_fmt(args).unwrap();
+    });
 }

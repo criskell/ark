@@ -1,4 +1,4 @@
 .PHONY: run
 
 run:
-	RUSTFLAGS='-C link-args=-Tlinker.ld' cargo +nightly build --target i686.json && qemu-system-i386 -kernel target/i686/debug/ark
+	RUSTFLAGS='-C link-args=-Tlinker.ld' cargo +nightly build --target i686.json && qemu-system-i386 -kernel target/i686/debug/ark -monitor stdio -d int,cpu_reset,guest_errors -no-reboot -no-shutdown -s

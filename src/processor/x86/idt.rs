@@ -1,28 +1,18 @@
 use core::arch::asm;
 
+use crate::{
+    println,
+    processor::x86::{interrupts, io},
+};
+
 #[repr(C, packed)]
 #[derive(Copy, Clone)]
 struct IdtEntry {
-    /// Handler (low) address.
     offset_low: u16,
-
-    /// Code segment.
     selector: u16,
-
-    /// Optional stack.
-    ist: u8,
-
-    /// Gate (trap, interrupt) type + privileges.
-    attributes: u8,
-
-    /// Handler (middle) address.
-    offset_middle: u16,
-
-    /// Handler (high) address.
-    offset_high: u32,
-
-    /// Reserved bits.
-    zero: u32,
+    zero: u8,
+    type_attr: u8,
+    offset_high: u16,
 }
 
 impl IdtEntry {
@@ -30,42 +20,80 @@ impl IdtEntry {
         IdtEntry {
             offset_low: 0,
             selector: 0,
-            ist: 0,
-            attributes: 0,
-            offset_middle: 0,
-            offset_high: 0,
             zero: 0,
+            type_attr: 0,
+            offset_high: 0,
         }
     }
 
-    fn set_handler(&mut self, handler: extern "C" fn()) {
-        let addr = handler as u64;
-
-        self.offset_low = addr as u16;
-        self.offset_middle = (addr >> 16) as u16;
-        self.offset_high = (addr >> 32) as u32;
-        // kernel code segment
-        self.selector = 0x08;
-        self.attributes = 0x8E; // interrupt gate, present
+    unsafe fn set_handler(&mut self, handler_virtual_addr: u64) {
+        self.offset_low = (handler_virtual_addr & 0xFFFF) as u16;
+        self.offset_high = ((handler_virtual_addr >> 16) & 0xFFFF) as u16;
+        self.selector = 0x8;
+        self.type_attr = 0x8E | 0x60;
     }
 }
 
-#[repr(C, align(16))]
-struct Idt {
+#[repr(C, packed)]
+pub struct Idt {
     entries: [IdtEntry; 256],
 }
 
-static mut IDT: Idt = Idt {
+pub static mut IDT: Idt = Idt {
     entries: [IdtEntry::new(); 256],
 };
 
+#[derive(Debug)]
+#[repr(C)]
+pub struct InterruptStackFrame {
+    pub instruction_pointer: u32,
+    pub code_segment_selector: u16,
+    pub eflags: u32,
+    pub stack_pointer: u32,
+    pub stack_segment_selector: u16,
+}
+
+extern "x86-interrupt" fn divide_by_zero_handler(mut stack_frame: InterruptStackFrame) {
+    crate::screen::vga::VGA_SCREEN.lock().write_char('Z');
+
+    // FIXME: Just to test. Should panic instead.
+    stack_frame.instruction_pointer += 2;
+
+    loop {}
+}
+
+extern "C" fn double_fault_handler() {
+    crate::screen::vga::VGA_SCREEN
+        .lock()
+        .write_string("Double fault");
+
+    loop {}
+}
+
+#[no_mangle]
+fn general_protection_fault_handler(error_code: u32) {
+    println!("GENERAL PROTECTION FAULT {:#?}", error_code);
+
+    loop {}
+}
+
+#[no_mangle]
+fn general_protection_fault_handler_stub() {
+    unsafe {
+        asm!(
+            "add esp, 24",
+            "push eax",
+            "push 0",
+            "jmp general_protection_fault_handler"
+        );
+    }
+}
+
 pub fn init_idt() {
     unsafe {
-        extern "C" fn divide_by_zero_handler() {
-            crate::screen::vga::VGA_SCREEN.lock().write_char('Z');
-        }
-
-        IDT.entries[0].set_handler(divide_by_zero_handler);
+        IDT.entries[0].set_handler(divide_by_zero_handler as u64);
+        IDT.entries[8].set_handler(double_fault_handler as u64);
+        IDT.entries[13].set_handler(general_protection_fault_handler_stub as u64);
 
         lidt(&raw const IDT);
     }
@@ -74,14 +102,21 @@ pub fn init_idt() {
 #[repr(C, packed)]
 struct Idtr {
     limit: u16,
-    base: u64,
+    base: u32,
 }
 
 unsafe fn lidt(idt: *const Idt) {
     let idtr = Idtr {
-        base: idt as *const _ as u64,
-        limit: (core::mem::size_of::<Idt>() - 1) as u16,
+        limit: (256 * 8) - 1,
+        base: idt as *const _ as u32,
     };
 
-    asm!("lidt [{}]", in(reg) &idtr, options(nostack, preserves_flags));
+    asm!("lidt [{}]", in(reg) &idtr);
+
+    unsafe {
+        io::outportb(0x21, 0xFF);
+        io::outportb(0xA1, 0xFF);
+    }
+
+    interrupts::enable();
 }

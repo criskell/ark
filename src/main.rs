@@ -1,6 +1,16 @@
 #![no_std]
 #![no_main]
 
+use core::{
+    arch::{asm, naked_asm},
+    panic::PanicInfo,
+};
+
+use ark::{
+    println,
+    processor::x86::{gdt, idt, ring3},
+};
+
 #[link_section = ".multiboot"]
 #[no_mangle]
 #[used]
@@ -10,26 +20,31 @@ pub static MULTIBOOT_HEADER: [u32; 3] = [
     (-(0x1BADB002i32 + 0b00000000i32)) as u32,
 ];
 
-use ark::{
-    processor::x86::{gdt, idt},
-    screen::vga::VGA_SCREEN,
-};
-use core::panic::PanicInfo;
+extern "C" {
+    static stack_top: u32;
+}
 
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
-    idt::init_idt();
-
-    VGA_SCREEN.lock().clear_screen();
-    gdt::install();
-    VGA_SCREEN.lock().write_string("Olá, mundo!");
+unsafe fn initialize() -> ! {
+    asm!(
+        "mov esp, {0}",
+        "jmp {1}",
+        in(reg) &stack_top,
+        sym rust_main
+    );
 
     loop {}
 }
 
+unsafe fn rust_main() -> ! {
+    idt::init_idt();
+    gdt::install();
+    ring3::switch_to_ring_3();
+}
+
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    VGA_SCREEN.lock().write_string("panicked // TODO");
+    println!("Panicked.");
 
     loop {}
 }

@@ -6,6 +6,13 @@
   "executables": true,
   "linker-flavor": "ld.lld",
   "linker": "ld.lld",
-  "target-pointer-width": "32",
-  "disable-redzone": true
+  "target-pointer-width": 32,
+  "target-c-int-width": 32,
+  "disable-redzone": true,
+  "features": "-mmx,-sse,-sse2,+soft-float",
+  "rustc-abi": "x86-softfloat",
+  "panic-strategy": "abort",
+  "target-endian": "little",
+  "dynamic-linking": true,
+  "relocation-model": "static"
 }

@@ -7,5 +7,6 @@
   "linker-flavor": "ld.lld",
   "linker": "ld.lld",
   "target-pointer-width": "64",
-  "disable-redzone": true
+  "disable-redzone": true,
+  "relocation-model": "static"
 }
