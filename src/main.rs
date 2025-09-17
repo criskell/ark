@@ -1,14 +1,14 @@
 #![no_std]
 #![no_main]
+#![feature(custom_test_frameworks)]
+#![test_runner(ark::test_runner)]
+#![reexport_test_harness_main = "test_main"]
 
-use core::{
-    arch::{asm, naked_asm},
-    panic::PanicInfo,
-};
+use core::{arch::asm, panic::PanicInfo};
 
 use ark::{
+    arch::x86::{gdt, idt, ring3},
     println,
-    processor::x86::{gdt, idt, ring3},
 };
 
 #[link_section = ".multiboot"]

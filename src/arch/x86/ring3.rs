@@ -1,4 +1,4 @@
-use crate::{processor::x86::gdt, screen::vga};
+use crate::{arch::x86::gdt, screen::vga};
 use core::arch::asm;
 
 use crate::println;

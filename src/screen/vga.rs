@@ -3,9 +3,10 @@ use core::ptr;
 
 use spin::Mutex;
 
+use crate::serial::SERIAL;
 use crate::{
+    arch::{interrupts, io},
     mem::util,
-    processor::x86::{interrupts, io},
     text::cp437,
 };
 
@@ -157,5 +158,9 @@ pub fn _print(args: fmt::Arguments) {
 
     interrupts::without_interrupts(|| {
         VGA_SCREEN.lock().write_fmt(args).unwrap();
+        unsafe {
+            #[allow(static_mut_refs)]
+            SERIAL.write_fmt(args).unwrap();
+        }
     });
 }

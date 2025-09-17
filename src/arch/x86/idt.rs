@@ -1,8 +1,8 @@
 use core::arch::asm;
 
 use crate::{
+    arch::x86::{interrupts, io},
     println,
-    processor::x86::{interrupts, io},
 };
 
 #[repr(C, packed)]
