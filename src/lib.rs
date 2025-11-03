@@ -10,6 +10,7 @@ pub mod arch;
 pub mod mem;
 #[macro_use]
 pub mod screen;
+pub mod pci;
 pub mod qemu;
 pub mod serial;
 pub mod text;

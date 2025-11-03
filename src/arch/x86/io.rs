@@ -18,3 +18,12 @@ pub unsafe fn inportb(port: u16) -> u8 {
 
     return data;
 }
+
+#[inline(always)]
+pub unsafe fn inportl(port: u16) -> u32 {
+    let mut data: u32;
+
+    asm!("in al, dx", in("dx") port, out("eax") data);
+
+    return data;
+}
