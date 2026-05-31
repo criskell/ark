@@ -90,4 +90,20 @@ fn visit_function(bus: u8, device: u8, function: u8) {
 
         visit_bus(secondary_bus_number as u8);
     }
+
+    if base_class == 0x02 && subclass == 0x00 {
+        let mac_memory_address =
+            (read_configuration_register_long(bus, device, function, 0x10) & 0xFFFFFFF0) + 0x5400;
+
+        unsafe {
+            let ral0 = (*(mac_memory_address as *const u32)).to_le_bytes();
+            let rah0 = (*((mac_memory_address + 6) as *const u16)).to_le_bytes();
+
+            println!("MAC address:");
+            println!(
+                "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+                ral0[0], ral0[1], ral0[2], ral0[3], rah0[0], rah0[1]
+            );
+        }
+    }
 }
