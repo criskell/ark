@@ -8,7 +8,8 @@ use core::{arch::asm, panic::PanicInfo};
 
 use ark::{
     arch::x86::{gdt, idt, ring3},
-    println,
+    pci, println,
+    screen::vga,
 };
 
 #[link_section = ".multiboot"]
@@ -39,7 +40,11 @@ unsafe fn initialize() -> ! {
 unsafe fn rust_main() -> ! {
     idt::init_idt();
     gdt::install();
-    ring3::switch_to_ring_3();
+
+    vga::VGA_SCREEN.lock().clear_screen();
+    pci::visit_buses();
+
+    loop {}
 }
 
 #[panic_handler]

@@ -7,7 +7,7 @@ pub unsafe fn outportb(port: u16, data: u8) {
 
 #[inline(always)]
 pub unsafe fn outportl(port: u16, data: u32) {
-    asm!("out dx, al", in("dx") port, in("eax") data);
+    asm!("out dx, eax", in("dx") port, in("eax") data);
 }
 
 #[inline(always)]
@@ -23,7 +23,7 @@ pub unsafe fn inportb(port: u16) -> u8 {
 pub unsafe fn inportl(port: u16) -> u32 {
     let mut data: u32;
 
-    asm!("in al, dx", in("dx") port, out("eax") data);
+    asm!("in eax, dx", in("dx") port, out("eax") data);
 
     return data;
 }
