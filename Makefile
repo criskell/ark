@@ -9,6 +9,5 @@ run:
 			-device \
 			isa-debug-exit,iobase=0xf4,iosize=0x04 \
 			-d int,cpu_reset,guest_errors \
-			-monitor tcp:127.0.0.1:4321,server,nowait \
-			-device e1000,mac=67:67:67:42:67:67
-	# open QEMU monitor with `telnet 127.0.0.1 4321`
+			-monitor tcp:127.0.0.1:4321,server,nowait
+# open QEMU monitor with `telnet 127.0.0.1 4321`
