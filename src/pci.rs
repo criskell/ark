@@ -185,19 +185,11 @@ fn visit_function(bus: u8, device: u8, function: u8) {
                 if core::ptr::addr_of!(descriptor.status).read_volatile() & 1 == 0 {
                     continue;
                 }
-
-                // let length = descriptor.length;
-
-                let length = descriptor.length as usize;
-                let buf = &RING_BUFFERS.0[current];
-
+                let length = descriptor.length;
                 println!("{}", length);
-
                 descriptor.length = 0;
                 descriptor.status = 0;
-
                 (mmio_ptr.add(0x2818 / 4)).write_volatile(current as u32);
-
                 current = (current + 1) % 32;
             }
         }
