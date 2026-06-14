@@ -103,20 +103,23 @@ impl VGAScreen {
         let hidden_line_count = (self.y - VGA_HEIGHT + 1) as usize;
 
         unsafe {
-            // Move line to top.
-            ptr::copy_nonoverlapping(
-                VGA_BUFFER.add(hidden_line_count * 80),
+            let remaining_lines_bytes = (25 - hidden_line_count) * 80 * 2;
+
+            ptr::copy(
+                VGA_BUFFER.add(hidden_line_count * 80 * 2),
                 VGA_BUFFER,
-                (25 - hidden_line_count) * 80 * 2,
+                remaining_lines_bytes,
             );
 
             // Clear last line.
             util::memsetw(
-                VGA_BUFFER.add(hidden_line_count + (25 - hidden_line_count)) as *mut u16,
+                VGA_BUFFER.add((VGA_HEIGHT as usize - 1) * 80 * 2) as *mut u16,
                 BLANK_CHARACTER,
                 80,
             );
         }
+
+        self.y = VGA_HEIGHT - 1;
     }
 
     fn update_hardware_cursor(&self) {
@@ -157,10 +160,10 @@ pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
 
     interrupts::without_interrupts(|| {
-        VGA_SCREEN.lock().write_fmt(args).unwrap();
         unsafe {
             #[allow(static_mut_refs)]
             SERIAL.write_fmt(args).unwrap();
         }
+        VGA_SCREEN.lock().write_fmt(args).unwrap();
     });
 }

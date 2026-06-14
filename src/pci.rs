@@ -1,6 +1,6 @@
 use core::slice;
 
-use crate::arch::io;
+use crate::{arch::io, pci::EtherType::Arp};
 
 fn read_configuration_register_long(bus: u8, device: u8, function: u8, offset: u32) -> u32 {
     let address = 0x80000000
@@ -84,17 +84,6 @@ fn visit_bus(bus: u8) {
     }
 }
 
-#[repr(C, align(16))]
-#[derive(Copy, Clone)]
-struct NetworkReceiveDescriptor {
-    buffer_address: u64,
-    length: u16,
-    checksum: u16,
-    status: u8,
-    errors: u8,
-    special: u16,
-}
-
 fn visit_function(bus: u8, device: u8, function: u8) {
     let class_register = read_configuration_register_long(bus, device, function, 0x8) >> 16;
     let base_class = class_register >> 8;
@@ -163,7 +152,7 @@ fn visit_function(bus: u8, device: u8, function: u8) {
 
             // Create ring
             for i in 0..32 {
-                RECEIVE_RING.0[i].buffer_address = RING_BUFFERS.0[i].as_ptr() as u64;
+                RECEIVE_RING.0[i].buffer_address = RECEIVE_RING_BUFFERS.0[i].as_ptr() as u64;
             }
 
             let receive_ring_address = &RECEIVE_RING as *const _ as u64;
@@ -181,16 +170,42 @@ fn visit_function(bus: u8, device: u8, function: u8) {
 
             (mmio_ptr.add(0x0100 / 4)).write_volatile(rctl);
 
-            let mut current = 0;
+            // Enable transmission
+            for i in 0..32 {
+                TRANSMIT_RING.0[i].buffer_address = TRANSMIT_RING_BUFFERS.0[i].as_ptr() as u64;
+            }
+
+            let transmit_ring_address = &TRANSMIT_RING as *const _ as u64;
+
+            (mmio_ptr.byte_add(0x3800)).write_volatile(transmit_ring_address as u32); // TDBAL
+            (mmio_ptr.byte_add(0x3804)).write_volatile((transmit_ring_address >> 32) as u32); // TDBAH
+            (mmio_ptr.byte_add(0x3808)).write_volatile(32 * 16); // TDLEN
+            (mmio_ptr.byte_add(0x3810)).write_volatile(0); // TDH
+            (mmio_ptr.byte_add(0x3818)).write_volatile(0); // TDT
+
+            let tctl = (1 << 1) // Enable bit - bit 1
+                | (1 << 3) // Pad short packets - bit 3
+                | (0x10 << 4) // Collision Threshold - bit 4..11
+                | (0x40 << 12); // Collision Distance - bit 12..21
+
+            (mmio_ptr.byte_add(0x0400)).write_volatile(tctl);
+            (mmio_ptr.byte_add(0x0408)).write_volatile(0x0060200A); // Transmit Inter Packet Gap
+
+            let mut receive_current = 0;
+            let mut transmit_current = 0;
+            let mut sent_arp_reply = false;
 
             loop {
-                let descriptor = &mut RECEIVE_RING.0[current];
+                let descriptor = &mut RECEIVE_RING.0[receive_current];
 
                 if core::ptr::addr_of!(descriptor.status).read_volatile() & 1 == 0 {
                     continue;
                 }
 
                 let length = descriptor.length;
+
+                println!("length = {length}");
+
                 let ptr = descriptor.buffer_address as *const u8;
 
                 let slice = slice::from_raw_parts(ptr, 6);
@@ -204,7 +219,7 @@ fn visit_function(bus: u8, device: u8, function: u8) {
                 let slice = slice::from_raw_parts(ptr.byte_add(12), 2);
                 let ether_type = EtherType::from(u16::from_be_bytes(slice.try_into().unwrap()));
 
-                let ethernet_frame = EthernetFrame {
+                let ethernet_frame = EthernetPacket {
                     ether_type,
                     destination_address,
                     source_address,
@@ -212,17 +227,90 @@ fn visit_function(bus: u8, device: u8, function: u8) {
 
                 let payload = slice::from_raw_parts(ptr.byte_add(14), (length - 14) as usize);
 
-                println!(
-                    "ethertype: {:?}, destination_address: {:?}, payload: {:?}",
-                    ethernet_frame.ether_type, ethernet_frame.destination_address, payload
-                );
+                if !sent_arp_reply {
+                    let arp_packet = ArpPacket {
+                        hardware_type: u16::from_be_bytes(payload[0..2].try_into().unwrap()), // Ethernet = 1
+                        protocol_type: u16::from_be_bytes(payload[2..4].try_into().unwrap()), // Ipv4 = 0x0800
+                        hardware_length: payload[4], // MAC Address = 6
+                        protocol_length: payload[5], // IPv4 Address = 4
+                        opcode: u16::from_be_bytes(payload[6..8].try_into().unwrap()), // 1 = Request, 2 = Reply
+                        sender_hardware_address: payload[8..14].try_into().unwrap(),
+                        sender_protocol_address: payload[14..18].try_into().unwrap(),
+                        target_hardware_address: payload[18..24].try_into().unwrap(),
+                        target_protocol_address: payload[24..28].try_into().unwrap(),
+                    };
+
+                    println!(
+                        "ethertype: {:?}, destination_address: {:?}, payload: {:?}",
+                        ethernet_frame.ether_type, ethernet_frame.destination_address, payload
+                    );
+
+                    println!("arp_packet = {:?}", arp_packet);
+
+                    let reply_arp_packet = ArpPacket {
+                        hardware_type: 1,      // Ethernet = 1
+                        protocol_type: 0x0800, // Ipv4 = 0x0800
+                        hardware_length: 6,    // MAC Address = 6
+                        protocol_length: 4,    // IPv4 Address = 4
+                        opcode: 0x2,           // 1 = Request, 2 = Reply
+                        sender_hardware_address: slice::from_raw_parts(
+                            mac_memory_address as *const u8,
+                            6,
+                        )
+                        .try_into()
+                        .unwrap(),
+                        sender_protocol_address: [192, 168, 100, 2], // google.com IPv4 address
+                        target_hardware_address: arp_packet.sender_hardware_address,
+                        target_protocol_address: arp_packet.sender_protocol_address,
+                    };
+
+                    let reply_ethernet_packet = EthernetPacket {
+                        destination_address: arp_packet.sender_hardware_address,
+                        source_address: slice::from_raw_parts(mac_memory_address as *const u8, 6)
+                            .try_into()
+                            .unwrap(),
+                        ether_type: EtherType::Arp,
+                    };
+
+                    let transmit_descriptor = &mut TRANSMIT_RING.0[transmit_current];
+
+                    transmit_descriptor.length = 42; // THE ANSWER FOR EVERYTHING IN THE UNIVERSE!
+                    transmit_descriptor.command = 1 /* EOP (End Of Packet) */ | 1 << 1 /* IFCS (Insert Frame Check Sequence) */ | 1 << 3 /* RS (Report Status) */;
+
+                    let buffer_address = transmit_descriptor.buffer_address as *mut u8;
+                    let buffer = slice::from_raw_parts_mut(buffer_address, 42);
+
+                    buffer[0..6].copy_from_slice(&reply_ethernet_packet.destination_address);
+                    buffer[6..12].copy_from_slice(&reply_ethernet_packet.source_address);
+                    buffer[12..14]
+                        .copy_from_slice(&(reply_ethernet_packet.ether_type as u16).to_be_bytes());
+                    buffer[14..16].copy_from_slice(&reply_arp_packet.hardware_type.to_be_bytes());
+                    buffer[16..18].copy_from_slice(&reply_arp_packet.protocol_type.to_be_bytes());
+                    buffer[18] = reply_arp_packet.hardware_length;
+                    buffer[19] = reply_arp_packet.protocol_length;
+                    buffer[20..22].copy_from_slice(&reply_arp_packet.opcode.to_be_bytes());
+                    buffer[22..28].copy_from_slice(&reply_arp_packet.sender_hardware_address);
+                    buffer[28..32].copy_from_slice(&reply_arp_packet.sender_protocol_address);
+                    buffer[32..38].copy_from_slice(&reply_arp_packet.target_hardware_address);
+                    buffer[38..42].copy_from_slice(&reply_arp_packet.target_protocol_address);
+
+                    println!("{:?}", buffer);
+
+                    transmit_current = (transmit_current + 1) % 32;
+
+                    // Write TDT
+                    (mmio_ptr.byte_add(0x3818)).write_volatile(transmit_current as u32);
+
+                    // sent_arp_reply = true;
+                }
 
                 descriptor.length = 0;
                 descriptor.status = 0;
 
-                (mmio_ptr.byte_add(0x2818)).write_volatile(current as u32);
+                // Write RDT
+                (mmio_ptr.byte_add(0x2818)).write_volatile(receive_current as u32);
 
-                current = (current + 1) % 32;
+                receive_current = (receive_current + 1) % 32;
             }
         }
     }
@@ -246,10 +334,34 @@ impl From<u16> for EtherType {
     }
 }
 
-pub struct EthernetFrame {
+pub struct EthernetPacket {
     pub destination_address: [u8; 6],
     pub source_address: [u8; 6],
     pub ether_type: EtherType,
+}
+
+#[derive(Debug)]
+pub struct ArpPacket {
+    pub hardware_type: u16,
+    pub protocol_type: u16,
+    pub hardware_length: u8,
+    pub protocol_length: u8,
+    pub opcode: u16,
+    pub sender_hardware_address: [u8; 6],
+    pub sender_protocol_address: [u8; 4],
+    pub target_hardware_address: [u8; 6],
+    pub target_protocol_address: [u8; 4],
+}
+
+#[repr(C, align(16))]
+#[derive(Copy, Clone)]
+struct NetworkReceiveDescriptor {
+    buffer_address: u64,
+    length: u16,
+    checksum: u16,
+    status: u8,
+    errors: u8,
+    special: u16,
 }
 
 // Allocate ring + buffers
@@ -270,4 +382,33 @@ static mut RECEIVE_RING: ReceiveRing = ReceiveRing(
     }; 32],
 );
 
-static RING_BUFFERS: RingBuffers = RingBuffers([[0u8; 2048]; 32]);
+static RECEIVE_RING_BUFFERS: RingBuffers = RingBuffers([[0u8; 2048]; 32]);
+
+#[repr(align(16))]
+struct TransmitRing([NetworkTransmitDescriptor; 32]);
+
+static mut TRANSMIT_RING: TransmitRing = TransmitRing(
+    [NetworkTransmitDescriptor {
+        buffer_address: 0,
+        length: 0,
+        checksum_offset: 0,
+        command: 0,
+        status: 0,
+        checksum_start: 0,
+        special: 0,
+    }; 32],
+);
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct NetworkTransmitDescriptor {
+    buffer_address: u64,
+    length: u16,
+    checksum_offset: u8,
+    command: u8,
+    status: u8,
+    checksum_start: u8,
+    special: u8,
+}
+
+static TRANSMIT_RING_BUFFERS: RingBuffers = RingBuffers([[0u8; 2048]; 32]);
