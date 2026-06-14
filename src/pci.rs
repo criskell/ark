@@ -1,3 +1,5 @@
+use core::slice;
+
 use crate::arch::io;
 
 fn read_configuration_register_long(bus: u8, device: u8, function: u8, offset: u32) -> u32 {
@@ -166,11 +168,11 @@ fn visit_function(bus: u8, device: u8, function: u8) {
 
             let receive_ring_address = &RECEIVE_RING as *const _ as u64;
 
-            (mmio_ptr.add(0x2800 / 4)).write_volatile(receive_ring_address as u32); // RDBAL
-            (mmio_ptr.add(0x2804 / 4)).write_volatile((receive_ring_address >> 32) as u32); // RDBAH
-            (mmio_ptr.add(0x2808 / 4)).write_volatile(32 * 16); // RDLEN
-            (mmio_ptr.add(0x2810 / 4)).write_volatile(0); // RDH
-            (mmio_ptr.add(0x2818 / 4)).write_volatile(31); // RDT
+            (mmio_ptr.byte_add(0x2800)).write_volatile(receive_ring_address as u32); // RDBAL
+            (mmio_ptr.byte_add(0x2804)).write_volatile((receive_ring_address >> 32) as u32); // RDBAH
+            (mmio_ptr.byte_add(0x2808)).write_volatile(32 * 16); // RDLEN
+            (mmio_ptr.byte_add(0x2810)).write_volatile(0); // RDH
+            (mmio_ptr.byte_add(0x2818)).write_volatile(31); // RDT
 
             // RCTL - Enable reception
             let rctl = (1 << 1) // Enable bit - bit 1
@@ -178,7 +180,9 @@ fn visit_function(bus: u8, device: u8, function: u8) {
                 | (1 << 26); // SECRC (Strip Ethernet CRC) - Bit 26
 
             (mmio_ptr.add(0x0100 / 4)).write_volatile(rctl);
+
             let mut current = 0;
+
             loop {
                 let descriptor = &mut RECEIVE_RING.0[current];
 
@@ -187,18 +191,65 @@ fn visit_function(bus: u8, device: u8, function: u8) {
                 }
 
                 let length = descriptor.length;
+                let ptr = descriptor.buffer_address as *const u8;
 
-                println!("{}", length);
+                let slice = slice::from_raw_parts(ptr, 6);
+                let mut destination_address = [0; 6];
+                destination_address.copy_from_slice(slice);
+
+                let slice = slice::from_raw_parts(ptr.byte_add(6), 6);
+                let mut source_address = [0; 6];
+                source_address.copy_from_slice(slice);
+
+                let slice = slice::from_raw_parts(ptr.byte_add(12), 2);
+                let ether_type = EtherType::from(u16::from_be_bytes(slice.try_into().unwrap()));
+
+                let ethernet_frame = EthernetFrame {
+                    ether_type,
+                    destination_address,
+                    source_address,
+                };
+
+                let payload = slice::from_raw_parts(ptr.byte_add(14), (length - 14) as usize);
+
+                println!(
+                    "ethertype: {:?}, destination_address: {:?}, payload: {:?}",
+                    ethernet_frame.ether_type, ethernet_frame.destination_address, payload
+                );
 
                 descriptor.length = 0;
                 descriptor.status = 0;
 
-                (mmio_ptr.add(0x2818 / 4)).write_volatile(current as u32);
+                (mmio_ptr.byte_add(0x2818)).write_volatile(current as u32);
 
                 current = (current + 1) % 32;
             }
         }
     }
+}
+
+#[derive(Debug)]
+pub enum EtherType {
+    IpV4 = 0x8000,
+    Arp = 0x0806,
+    Ipv6 = 0x86DD,
+}
+
+impl From<u16> for EtherType {
+    fn from(value: u16) -> Self {
+        match value {
+            0x8000 => EtherType::IpV4,
+            0x0806 => EtherType::Arp,
+            0x86DD => EtherType::Ipv6,
+            _ => panic!("Unknown ether type: {value}"),
+        }
+    }
+}
+
+pub struct EthernetFrame {
+    pub destination_address: [u8; 6],
+    pub source_address: [u8; 6],
+    pub ether_type: EtherType,
 }
 
 // Allocate ring + buffers
