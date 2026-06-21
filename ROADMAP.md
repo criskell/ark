@@ -1,0 +1,11 @@
+- [ ] Bootloader
+  - [ ] BIOS
+  - [ ] UEFI
+- [ ] Protected Mode
+- [ ] Long Mode
+- [ ] Paging
+- [ ] Virtual Memory Allocation
+- [ ] Scheduler
+- [ ] Syscalls
+- [ ] Init image
+- [ ] Drivers

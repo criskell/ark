@@ -12,6 +12,7 @@ pub static mut SERIAL: Serial = Serial;
 impl fmt::Write for Serial {
     fn write_str(&mut self, str: &str) -> fmt::Result {
         serial::write_string(str);
+
         Ok(())
     }
 }

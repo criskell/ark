@@ -1,7 +1,7 @@
 use core::arch::asm;
 
 use crate::{
-    arch::x86::{interrupts, io},
+    arch::x86_64::{interrupts, io},
     println,
 };
 

@@ -6,8 +6,7 @@ use spin::Mutex;
 use crate::serial::SERIAL;
 use crate::{
     arch::{interrupts, io},
-    mem::util,
-    text::cp437,
+    memory::util,
 };
 
 const VGA_BUFFER: *mut u8 = 0xb8000 as *mut u8;
@@ -22,10 +21,7 @@ const BLANK_CHARACTER: u16 = 0x20 | ((COLOR as u16) << 8);
 pub static VGA_SCREEN: Mutex<VGAScreen> = Mutex::new(VGAScreen { x: 0, y: 0 });
 
 pub struct VGAScreen {
-    /// X-axis virtual cursor position.
     x: u16,
-
-    /// Y-asis virtual cursor position.
     y: u16,
 }
 
@@ -37,7 +33,7 @@ impl VGAScreen {
     }
 
     pub fn write_char(&mut self, character: char) {
-        let character_byte = cp437::normalize_to_cp437(character);
+        let character_byte = normalize_to_cp437(character);
 
         match character_byte {
             b'\n' => {
@@ -166,4 +162,25 @@ pub fn _print(args: fmt::Arguments) {
         }
         VGA_SCREEN.lock().write_fmt(args).unwrap();
     });
+}
+
+fn normalize_to_cp437(character: char) -> u8 {
+    match character {
+        'A' => 0x41,
+        'B' => 0x42,
+        'C' => 0x43,
+        'á' => 0xA0,
+        'à' => 0x85,
+        'â' => 0x83,
+        'ã' => 0xA3,
+        'é' => 0x82,
+        'ê' => 0x88,
+        'í' => 0x8A,
+        'ó' => 0xA2,
+        'õ' => 0xA5,
+        'ú' => 0xA4,
+        'ç' => 0x87,
+        ' '..'~' | '\n' | '\t' | '\r' => character as u8,
+        _ => 0xfe,
+    }
 }

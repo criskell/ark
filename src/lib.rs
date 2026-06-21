@@ -7,7 +7,7 @@
 
 use crate::qemu::QemuExitCode;
 pub mod arch;
-pub mod mem;
+pub mod memory;
 #[macro_use]
 pub mod screen;
 pub mod pci;

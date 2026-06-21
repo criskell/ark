@@ -189,7 +189,10 @@ fn visit_function(bus: u8, device: u8, function: u8) {
                 | (0x40 << 12); // Collision Distance - bit 12..21
 
             (mmio_ptr.byte_add(0x0400)).write_volatile(tctl);
-            (mmio_ptr.byte_add(0x0408)).write_volatile(0x0060200A); // Transmit Inter Packet Gap
+
+            const TIPG: u16 = 10 | 8 << TIPG_IPGR1_BIT | 6 << TIPG_IPGR2_BIT;
+
+            (mmio_ptr.byte_add(REGISTER_TIPG)).write_volatile(TIPG); // Transmit Inter Packet Gap
 
             let mut receive_current = 0;
             let mut transmit_current = 0;
@@ -226,6 +229,8 @@ fn visit_function(bus: u8, device: u8, function: u8) {
                 };
 
                 let payload = slice::from_raw_parts(ptr.byte_add(14), (length - 14) as usize);
+
+                println!("payload = {:?}", payload);
 
                 if !sent_arp_reply {
                     let arp_packet = ArpPacket {
@@ -301,8 +306,10 @@ fn visit_function(bus: u8, device: u8, function: u8) {
                     // Write TDT
                     (mmio_ptr.byte_add(0x3818)).write_volatile(transmit_current as u32);
 
-                    // sent_arp_reply = true;
+                    sent_arp_reply = true;
                 }
+
+                println!("a");
 
                 descriptor.length = 0;
                 descriptor.status = 0;
@@ -318,7 +325,7 @@ fn visit_function(bus: u8, device: u8, function: u8) {
 
 #[derive(Debug)]
 pub enum EtherType {
-    IpV4 = 0x8000,
+    IpV4 = 0x800,
     Arp = 0x0806,
     Ipv6 = 0x86DD,
 }
@@ -326,7 +333,7 @@ pub enum EtherType {
 impl From<u16> for EtherType {
     fn from(value: u16) -> Self {
         match value {
-            0x8000 => EtherType::IpV4,
+            0x800 => EtherType::IpV4,
             0x0806 => EtherType::Arp,
             0x86DD => EtherType::Ipv6,
             _ => panic!("Unknown ether type: {value}"),

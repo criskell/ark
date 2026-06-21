@@ -1,14 +1,33 @@
-.PHONY: run
+arch ?= x86_64
+kernel := output/$(arch)/disk/boot/kernel.bin
+ld_script := src/arch/$(arch)/linker.ld
+output := output/$(arch)
+disk := $(output)/disk
 
-run:
-	RUSTFLAGS='-C link-args=-Tlinker.ld' cargo +nightly build --target i686.json && \
-		qemu-system-i386 -kernel target/i686/debug/ark \
-			-no-reboot -no-shutdown \
-			-s \
-			-serial stdio \
-			-device \
-			isa-debug-exit,iobase=0xf4,iosize=0x04 \
-			-monitor tcp:127.0.0.1:4321,server,nowait \
-			-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
-			-device e1000,netdev=net0
-# open QEMU monitor with `telnet 127.0.0.1 4321`
+assembly_files := $(wildcard src/arch/$(arch)/*.S)
+object_files := $(patsubst src/arch/$(arch)/%.S, output/$(arch)/%.o, $(assembly_files))
+
+.PHONY: all build clean run
+
+all: run
+
+kernel: $(kernel)
+
+run: build
+	qemu-system-x86_64 -cdrom output/$(arch)/ark.iso
+
+build: $(kernel)
+	@mkdir -p $(disk)/boot/grub
+	@cp grub.cfg $(disk)/boot/grub
+	@grub-mkrescue -o output/$(arch)/ark.iso $(disk)
+
+clean:
+	@rm -rf output
+
+$(kernel): $(object_files) $(ld_script)
+	@mkdir -p $(shell dirname $(kernel))
+	ld -n -T $(ld_script) -o $(kernel) $(object_files)
+
+output/$(arch)/%.o: src/arch/$(arch)/%.S 
+	@mkdir -p $(shell dirname $@)
+	@as --64 $< -o $@

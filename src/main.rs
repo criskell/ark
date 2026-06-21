@@ -7,7 +7,7 @@
 use core::{arch::asm, panic::PanicInfo};
 
 use ark::{
-    arch::x86::{gdt, idt, ring3},
+    arch::x86_64::{gdt, idt, ring3},
     pci, println,
     screen::vga,
 };
