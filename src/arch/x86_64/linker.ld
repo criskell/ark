@@ -15,6 +15,10 @@ SECTIONS {
     *(.data)
   }
 
+  .rodata : {
+    *(.rodata)
+  }
+
   .bss : {
     *(.bss)
   }

@@ -21,9 +21,62 @@ enter:
   call verify_multiboot
   call verify_cpuid_enabled
   call verify_long_mode
+  call configure_paging_tables
+  call enable_paging
 
-  movl $0x2f692f68, 0xB8000 # 'h', 'i'
-  hlt
+  # 32-bit compatibility submode now
+
+  lgdt gdtr
+
+  # This is necessary because it is loading a 32-bit code selector.
+  ljmp $kernel_code_segment_offset, $long_mode_enter
+
+  # Now is full long mode
+
+enable_paging:
+  movl $p4_table, %eax
+  movl %eax, %cr3
+
+  # Enable PAE (Physical Address Extension)
+  movl %cr4, %eax
+  orl $(1 << 5), %eax
+  movl %eax, %cr4
+
+  # Enable long mode bit in EFER (Extended Feature Enable Register)
+  movl $0xC0000080, %ecx # EFER register is at 0xC0000080 address
+  rdmsr # Result = %eax
+  orl $(1 << 8), %eax
+  wrmsr
+
+  # Enable paging in CR0
+  movl %cr0, %eax
+  orl $(1 << 31), %eax
+  movl %eax, %cr0
+
+  ret
+
+configure_paging_tables:
+  movl $p3_table, %eax
+  orl $0b11, %eax # bit 0 = present, bit 1 = writable
+  movl %eax, p4_table
+
+  movl $p2_table, %eax
+  orl $0b11, %eax
+  movl %eax, p3_table
+
+  movl $0, %ecx
+
+.map_p2_table_entry:
+  movl $0x200000, %eax # 2MiB
+  mull %ecx # EDX:EAX *= EAX * ECX
+  orl $0b10000011, %eax
+  movl %eax, p2_table(, %ecx, 8)
+
+  incl %ecx
+  cmpl $512, %ecx
+  jne .map_p2_table_entry
+
+  ret
 
 verify_multiboot:
   cmpl $0x36d76289, %eax
@@ -85,7 +138,42 @@ display_error:
   hlt
 
 .bss
-stack_bottom:
+# Page tables should be aligned to 4KiB because bits 0-11 are used for flags. Placing page tables at beginning of the section
+# allows the linker to align the entire section without adding unused padding.
+.balign 4096
+
+p4_table: # PML4
   .skip 4096
 
+p3_table: # PDP
+  .skip 4096
+
+p2_table: # PD
+  .skip 4096
+
+p1_table:
+  .skip 4096
+
+stack_bottom:
+  .skip 64
+
 stack_top:
+
+.section .rodata
+gdt:
+  .quad 0
+
+.equ kernel_code_segment_offset, . - gdt
+  # Left to right: Executable, Descriptor type (1 for code and data segments), Present, 64-bit flag  
+  .quad (1 << 43) | (1 << 44) | (1 << 47) | (1 << 53)
+  # Data segment is not necessary in 64 bit mode
+
+gdtr:
+  .word . - gdt - 1
+  .quad gdt
+
+.code64
+long_mode_enter:
+  movq $0x2F4E2F452F522F45, %rax
+  movq %rax, 0xB8000
+  hlt
