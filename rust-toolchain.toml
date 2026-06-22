@@ -1,2 +1,0 @@
-[toolchain]
-targets = ["i686-unknown-linux-musl"]

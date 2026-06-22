@@ -174,6 +174,6 @@ gdtr:
 
 .code64
 long_mode_enter:
-  movq $0x2F4E2F452F522F45, %rax
-  movq %rax, 0xB8000
+  .extern kernel_enter
+  call kernel_enter
   hlt
