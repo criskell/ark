@@ -89,7 +89,7 @@ verify_multiboot:
 
 verify_cpuid_enabled:
   pushfl
-  popl %eax 
+  popl %eax
   movl %eax, %ecx # tmp = eflags
 
   xorl $(1 << 21), %eax # 21º bit = ID. Flip this bit.
@@ -164,7 +164,7 @@ gdt:
   .quad 0
 
 .equ kernel_code_segment_offset, . - gdt
-  # Left to right: Executable, Descriptor type (1 for code and data segments), Present, 64-bit flag  
+  # Left to right: Executable, Descriptor type (1 for code and data segments), Present, 64-bit flag
   .quad (1 << 43) | (1 << 44) | (1 << 47) | (1 << 53)
   # Data segment is not necessary in 64 bit mode
 
@@ -174,6 +174,8 @@ gdtr:
 
 .code64
 long_mode_enter:
-  .extern kernel_enter
-  call kernel_enter
+  .extern
+  movl %eax, %rdi
+  movl %ebx, %rsi
+  call multiboot2_kernel_enter
   hlt

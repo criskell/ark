@@ -4,7 +4,7 @@
 use core::panic::{self, PanicInfo};
 
 #[no_mangle]
-pub extern "C" fn kernel_enter() {
+pub extern "C" fn kernel_entry() {
     let message = b"Hello WorlZ!";
     let color_byte = 0x1f;
 
@@ -28,42 +28,44 @@ fn panic(_info: &PanicInfo) -> ! {
     loop {}
 }
 
-// #![feature(custom_test_frameworks)]
-// #![test_runner(crate::test_runner)]
-// #![reexport_test_harness_main = "test_main"]
-// #![feature(abi_x86_interrupt)]
+#![feature(custom_test_frameworks)]
+#![test_runner(crate::test_runner)]
+#![reexport_test_harness_main = "test_main"]
+#![feature(abi_x86_interrupt)]
 
-// use crate::qemu::QemuExitCode;
-// pub mod arch;
-// pub mod memory;
-// #[macro_use]
-// pub mod screen;
-// pub mod pci;
-// pub mod qemu;
-// pub mod serial;
-// pub mod text;
+use crate::qemu::QemuExitCode;
+pub mod arch;
+pub mod memory;
+#[macro_use]
+pub mod screen;
+pub mod pci;
+pub mod qemu;
+pub mod serial;
+pub mod text;
 
-// pub trait Testable {
-//     fn run(&self);
-// }
+pub mod boot;
 
-// impl<T> Testable for T
-// where
-//     T: Fn(),
-// {
-//     fn run(&self) {
-//         serial_print!("{}...\t", core::any::type_name::<T>());
-//         self();
-//         serial_print!("[ok]");
-//     }
-// }
+pub trait Testable {
+    fn run(&self);
+}
 
-// pub fn test_runner(tests: &[&dyn Testable]) {
-//     println!("Running {} tests", tests.len());
+impl<T> Testable for T
+where
+    T: Fn(),
+{
+    fn run(&self) {
+        serial_print!("{}...\t", core::any::type_name::<T>());
+        self();
+        serial_print!("[ok]");
+    }
+}
 
-//     for test in tests {
-//         test.run();
-//     }
+pub fn test_runner(tests: &[&dyn Testable]) {
+    println!("Running {} tests", tests.len());
 
-//     qemu::exit(QemuExitCode::Success);
-// }
+    for test in tests {
+        test.run();
+    }
+
+    qemu::exit(QemuExitCode::Success);
+}

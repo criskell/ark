@@ -11,5 +11,5 @@
   "disable-redzone": true,
   "relocation-model": "static",
   "features": "-mmx,-sse,+soft-float",
-  "rustc-abi": "x86-softfloat"
+  "rustc-abi": "softfloat"
 }
