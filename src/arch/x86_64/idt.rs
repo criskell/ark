@@ -54,8 +54,6 @@ pub struct InterruptStackFrame {
 }
 
 extern "x86-interrupt" fn divide_by_zero_handler(mut stack_frame: InterruptStackFrame) {
-    crate::screen::vga::VGA_SCREEN.lock().write_char('Z');
-
     // FIXME: Just to test. Should panic instead.
     stack_frame.instruction_pointer += 2;
 
@@ -63,10 +61,6 @@ extern "x86-interrupt" fn divide_by_zero_handler(mut stack_frame: InterruptStack
 }
 
 extern "C" fn double_fault_handler() {
-    crate::screen::vga::VGA_SCREEN
-        .lock()
-        .write_string("Double fault");
-
     loop {}
 }
 
@@ -82,7 +76,7 @@ fn general_protection_fault_handler_stub() {
     unsafe {
         asm!(
             "add esp, 24",
-            "push eax",
+            "push rax",
             "push 0",
             "jmp general_protection_fault_handler"
         );

@@ -1,71 +1,39 @@
 #![no_std]
+#![feature(abi_x86_interrupt)]
 #![cfg_attr(test, no_main)]
 
-use core::panic::{self, PanicInfo};
+// use core::panic::{self, PanicInfo};
 
-#[no_mangle]
-pub extern "C" fn kernel_entry() {
-    let message = b"Hello WorlZ!";
-    let color_byte = 0x1f;
+use core::panic::PanicInfo;
 
-    let mut hello_colored = [color_byte; 24];
+use crate::boot::KernelBootContext;
 
-    for (i, char_byte) in message.into_iter().enumerate() {
-        hello_colored[i * 2] = *char_byte;
-    }
+pub mod arch;
+pub mod memory;
+#[macro_use]
+pub mod device;
+pub mod boot;
 
-    let buffer_ptr = (0xb8000 + 1988) as *mut _;
+pub fn kernel_enter(context: KernelBootContext) -> ! {
+    let total_memory: u64 = context.memory_map.usable().map(|r| r.size).sum();
 
-    unsafe {
-        *buffer_ptr = hello_colored;
+    println!("total_memory: {} MiB", total_memory / (1024 * 1024));
+
+    for region in context.memory_map.regions() {
+        println!(
+            " {:#018x} - {:#018x}  {:?}",
+            region.start_address,
+            region.end(),
+            region.kind
+        );
     }
 
     loop {}
 }
 
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
+fn panic(info: &PanicInfo) -> ! {
+    println!("{}", info);
+
     loop {}
-}
-
-#![feature(custom_test_frameworks)]
-#![test_runner(crate::test_runner)]
-#![reexport_test_harness_main = "test_main"]
-#![feature(abi_x86_interrupt)]
-
-use crate::qemu::QemuExitCode;
-pub mod arch;
-pub mod memory;
-#[macro_use]
-pub mod screen;
-pub mod pci;
-pub mod qemu;
-pub mod serial;
-pub mod text;
-
-pub mod boot;
-
-pub trait Testable {
-    fn run(&self);
-}
-
-impl<T> Testable for T
-where
-    T: Fn(),
-{
-    fn run(&self) {
-        serial_print!("{}...\t", core::any::type_name::<T>());
-        self();
-        serial_print!("[ok]");
-    }
-}
-
-pub fn test_runner(tests: &[&dyn Testable]) {
-    println!("Running {} tests", tests.len());
-
-    for test in tests {
-        test.run();
-    }
-
-    qemu::exit(QemuExitCode::Success);
 }

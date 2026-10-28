@@ -17,6 +17,8 @@ header_end:
 .globl enter
 enter:
   movl $stack_top, %esp
+  movl %eax, %edi
+  movl %ebx, %esi
 
   call verify_multiboot
   call verify_cpuid_enabled
@@ -79,7 +81,7 @@ configure_paging_tables:
   ret
 
 verify_multiboot:
-  cmpl $0x36d76289, %eax
+  cmpl $0x36d76289, %edi
   jne .no_valid_bootloader
   ret
 
@@ -135,7 +137,36 @@ display_error:
   movl $0x4F204F52, 0xB8008 # 'R', ' '
   movw $0x4F20, 0xB800C
   movb %al, 0xB800C
+2:
   hlt
+  jmp 2b
+
+.code64
+long_mode_enter:
+  movw $0, %ax
+  movw %ax, %ss
+  movw %ax, %ds
+  movw %ax, %fs
+  movw %ax, %gs
+  movw %ax, %es
+
+  call multiboot2_kernel_enter
+1:
+  hlt
+  jmp 1b
+
+.section .rodata
+gdt:
+  .quad 0
+
+.equ kernel_code_segment_offset, . - gdt
+  # Left to right: Executable, Descriptor type (1 for code and data segments), Present, 64-bit flag
+  .quad (1 << 43) | (1 << 44) | (1 << 47) | (1 << 53)
+  # Data segment is not necessary in 64 bit mode
+
+gdtr:
+  .word . - gdt - 1
+  .quad gdt
 
 .bss
 # Page tables should be aligned to 4KiB because bits 0-11 are used for flags. Placing page tables at beginning of the section
@@ -155,27 +186,6 @@ p1_table:
   .skip 4096
 
 stack_bottom:
-  .skip 64
+  .skip 64 * 1024 # 64 KiB
 
 stack_top:
-
-.section .rodata
-gdt:
-  .quad 0
-
-.equ kernel_code_segment_offset, . - gdt
-  # Left to right: Executable, Descriptor type (1 for code and data segments), Present, 64-bit flag
-  .quad (1 << 43) | (1 << 44) | (1 << 47) | (1 << 53)
-  # Data segment is not necessary in 64 bit mode
-
-gdtr:
-  .word . - gdt - 1
-  .quad gdt
-
-.code64
-long_mode_enter:
-  .extern
-  movl %eax, %rdi
-  movl %ebx, %rsi
-  call multiboot2_kernel_enter
-  hlt

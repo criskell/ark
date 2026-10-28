@@ -3,7 +3,7 @@ use core::ptr;
 
 use spin::Mutex;
 
-use crate::serial::SERIAL;
+use super::serial::SERIAL;
 use crate::{
     arch::{interrupts, io},
     memory::util,
@@ -135,12 +135,12 @@ impl VGAScreen {
 
 #[macro_export]
 macro_rules! print {
-    ($($arg:tt)*) => ($crate::screen::vga::_print(format_args!($($arg)*)));
+    ($($arg:tt)*) => ($crate::device::debug::_print(format_args!($($arg)*)));
 }
 
 #[macro_export]
 macro_rules! println {
-    () => ($crate::print("\n"));
+    () => ($crate::print!("\n"));
     ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
 }
 

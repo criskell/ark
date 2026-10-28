@@ -1,4 +1,4 @@
-use crate::{arch::x86_64::gdt, screen::vga};
+use crate::{arch::x86_64::gdt, device::debug};
 use core::arch::asm;
 
 use crate::println;
@@ -19,7 +19,7 @@ fn current_ring() -> u16 {
 
 #[no_mangle]
 pub extern "C" fn user_code() {
-    vga::VGA_SCREEN.lock().clear_screen();
+    debug::VGA_SCREEN.lock().clear_screen();
     println!("Estamos no ring: {}", current_ring());
     loop {}
 }
