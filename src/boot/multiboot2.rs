@@ -75,7 +75,7 @@ impl BootInfo {
         unsafe { &*(addr as *const BootInfo) }
     }
 
-    fn tags(&self) -> impl Iterator<Item = Tag<'_>> + '_ {
+    fn tags(&self) -> impl Iterator<Item = Tag<'_>> {
         let start = self as *const Self as usize;
         let end = start + self.total_size as usize;
         let mut cur = start + size_of::<Self>();
@@ -116,7 +116,7 @@ impl MemoryMapTag {
         map
     }
 
-    fn entries(&self) -> impl Iterator<Item = &MemoryMapEntry> + '_ {
+    fn entries(&self) -> impl Iterator<Item = &MemoryMapEntry> {
         let start = self as *const Self as usize;
         let end = start + self.header.size as usize;
         let step = self.entry_size as usize;

@@ -63,7 +63,7 @@ impl<const C: usize> MemoryMap<C> {
         &self.regions[..self.len]
     }
 
-    pub fn usable(&self) -> impl Iterator<Item = &MemoryRegion> + '_ {
+    pub fn usable(&self) -> impl Iterator<Item = &MemoryRegion> {
         self.regions()
             .iter()
             .filter(|r| r.kind == MemoryRegionKind::Usable)
