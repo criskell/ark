@@ -1,7 +1,5 @@
-use crate::{arch::x86_64::gdt, device::debug};
+use crate::arch::x86_64::gdt;
 use core::arch::asm;
-
-use crate::println;
 
 fn get_cs_register() -> u16 {
     let cs: u16;
@@ -19,12 +17,11 @@ fn current_ring() -> u16 {
 
 #[no_mangle]
 pub extern "C" fn user_code() {
-    debug::VGA_SCREEN.lock().clear_screen();
     println!("Estamos no ring: {}", current_ring());
     loop {}
 }
 
-fn enable_io_instructions() {
+fn enable_iopl() {
     unsafe {
         core::arch::asm!(
             "pushfd",
@@ -32,20 +29,14 @@ fn enable_io_instructions() {
             "or eax, {mask}",
             "push eax",
             "popfd",
-            mask = const (0b11 << 12), // O campo IOPL está nos bits 12 e 13
+            mask = const (0b11 << 12),
             options(nostack, preserves_flags)
         );
     }
 }
 
 pub unsafe fn switch_to_ring_3() -> ! {
-    // Utilizamos instruções de I/O para mostrar uma mensagem na tela com VGA.
-    // No entanto, essas instruções não são permitidas para serem executadas no ring 3.
-    // Ao alterarmos o IOPL (I/O privilege) para 3, permitimos código executando em ring 3
-    // utilizar portas de I/O.
-    // O ideal é criarmos uma API de syscall para mostrar mensagem na tela, mas estamos apenas testando agora
-    // a troca para ring 3.
-    enable_io_instructions();
+    enable_iopl();
 
     asm!(
         "mov ds, {data_segment_selector:x}",
