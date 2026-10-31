@@ -6,15 +6,16 @@ use spin::Mutex;
 use super::serial::SERIAL;
 use crate::{
     arch::{interrupts, io},
-    memory::util,
+    mem::util,
 };
 
 const VGA_BUFFER: *mut u8 = 0xb8000 as *mut u8;
-#[allow(dead_code)]
+
 const VGA_WIDTH: u16 = 80;
 const VGA_HEIGHT: u16 = 25;
 const VGA_CONTROL_REGISTER_PORT: u16 = 0x3D4;
 const VGA_DATA_REGISTER_PORT: u16 = 0x3D5;
+
 const COLOR: u8 = 0x0F;
 const BLANK_CHARACTER: u16 = 0x20 | ((COLOR as u16) << 8);
 
@@ -75,7 +76,11 @@ impl VGAScreen {
     pub fn clear_screen(&mut self) {
         for line in 0..25 {
             unsafe {
-                util::memsetw(VGA_BUFFER.add(line * 80) as *mut u16, BLANK_CHARACTER, 80);
+                util::memsetw(
+                    VGA_BUFFER.add(line * 80 * 2) as *mut u16,
+                    BLANK_CHARACTER,
+                    80,
+                );
             }
         }
 
@@ -135,7 +140,7 @@ impl VGAScreen {
 
 #[macro_export]
 macro_rules! print {
-    ($($arg:tt)*) => ($crate::device::debug::_print(format_args!($($arg)*)));
+    ($($arg:tt)*) => ($crate::device::vga::_print(format_args!($($arg)*)));
 }
 
 #[macro_export]
@@ -172,15 +177,15 @@ fn normalize_to_cp437(character: char) -> u8 {
         'á' => 0xA0,
         'à' => 0x85,
         'â' => 0x83,
-        'ã' => 0xA3,
+        'ã' => 0xC6,
         'é' => 0x82,
         'ê' => 0x88,
-        'í' => 0x8A,
+        'í' => 0xA1,
         'ó' => 0xA2,
-        'õ' => 0xA5,
-        'ú' => 0xA4,
+        'õ' => 0xE4,
+        'ú' => 0xA3,
         'ç' => 0x87,
-        ' '..'~' | '\n' | '\t' | '\r' => character as u8,
+        ' '..='~' | '\n' | '\t' | '\r' => character as u8,
         _ => 0xfe,
     }
 }
