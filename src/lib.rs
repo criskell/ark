@@ -2,30 +2,26 @@
 #![feature(abi_x86_interrupt)]
 #![cfg_attr(test, no_main)]
 
-// use core::panic::{self, PanicInfo};
-
 use core::panic::PanicInfo;
 
-use crate::boot::KernelBootContext;
+use crate::{arch::idt, boot::KernelBootContext, mem::OffsetMapping};
 
-pub mod arch;
-pub mod memory;
 #[macro_use]
 pub mod device;
+
+pub mod arch;
 pub mod boot;
+pub mod mem;
 
 pub fn kernel_enter(context: KernelBootContext) -> ! {
-    let total_memory: u64 = context.memory_map.usable().map(|r| r.size).sum();
+    idt::init_idt();
 
-    println!("total_memory: {} MiB", total_memory / (1024 * 1024));
+    let mapping = OffsetMapping(0xFFFF_8000_0000_0000);
 
-    for region in context.memory_map.regions() {
-        println!(
-            " {:#018x} - {:#018x}  {:?}",
-            region.start_address,
-            region.end(),
-            region.kind
-        );
+    let vga = mapping.virtual_to_physical(0xb8000) as *mut u16;
+
+    unsafe {
+        vga.write_volatile(0x0F41);
     }
 
     loop {}

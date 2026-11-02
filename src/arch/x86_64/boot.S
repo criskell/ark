@@ -23,7 +23,7 @@ enter:
   call verify_multiboot
   call verify_cpuid_enabled
   call verify_long_mode
-  call configure_paging_tables
+  call setup_paging_tables_for_identity_map
   call enable_paging
 
   # 32-bit compatibility submode now
@@ -57,10 +57,11 @@ enable_paging:
 
   ret
 
-configure_paging_tables:
+setup_paging_tables_for_identity_map:
   movl $p3_table, %eax
   orl $0b11, %eax # bit 0 = present, bit 1 = writable
   movl %eax, p4_table
+  movl %eax, p4_table + 256 * 8
 
   movl $p2_table, %eax
   orl $0b11, %eax
@@ -71,6 +72,7 @@ configure_paging_tables:
 .map_p2_table_entry:
   movl $0x200000, %eax # 2MiB
   mull %ecx # EDX:EAX *= EAX * ECX
+
   orl $0b10000011, %eax
   movl %eax, p2_table(, %ecx, 8)
 
