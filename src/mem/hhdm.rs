@@ -4,7 +4,7 @@ use crate::{
     mem::{
         addr::{PhysicalAddr, VirtualAddr},
         pmm::{FrameAllocator, FRAME_SIZE},
-        MemoryAddressMapping,
+        MapAttributes, MemoryAddressMapping,
     },
 };
 
@@ -80,7 +80,7 @@ pub unsafe fn init(
                     mapping.physical_to_virtual(current_physical_addr),
                     current_physical_addr,
                     size,
-                    Permissions::READ_WRITE,
+                    MapAttributes::KernelReadWrite,
                     frames,
                 )
                 .expect("failed to mount HHDM map");

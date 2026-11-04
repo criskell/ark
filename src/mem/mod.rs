@@ -11,6 +11,16 @@ pub mod addr;
 pub mod hhdm;
 pub mod pmm;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MapAttributes {
+    KernelReadOnly,
+    KernelReadWrite,
+    KernelReadExecute,
+    UserReadWrite,
+    UserReadExecute,
+    Device,
+}
+
 #[repr(transparent)]
 #[derive(Copy, Clone)]
 pub struct MemoryAddressMapping {

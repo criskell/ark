@@ -4,6 +4,7 @@ use core::ops::{BitOrAssign, Index, IndexMut, Range};
 use core::{arch::asm, ops::BitOr};
 
 use crate::mem::addr::{PhysicalAddr, VirtualAddr};
+use crate::mem::MapAttributes;
 use crate::mem::{pmm::FrameAllocator, MemoryAddressMapping};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -137,7 +138,7 @@ impl AddressSpace {
         virtual_addr: VirtualAddr,
         physical_addr: PhysicalAddr,
         size: MapSize,
-        permissions: Permissions,
+        attributes: MapAttributes,
         frames: &mut impl FrameAllocator,
     ) -> Result<(), MapError> {
         assert!(
@@ -154,17 +155,17 @@ impl AddressSpace {
             table = self.next_table(table, index, frames)?;
         }
 
-        let mut flags = EntryFlags::from(permissions);
-        if size != SIZE_4K {
-            flags |= EntryFlags::HUGE;
-        }
-
         // SAFETY: `table` is a valid table, obtained above.
         let entry = &mut unsafe { self.table_mut(table) }[indices[leaf_level]];
         if entry.is_present() {
             return Err(MapError::AlreadyMapped);
         }
-        *entry = PageTableEntry::new(physical_addr, flags);
+
+        *entry = if size == SIZE_4K {
+            PageTableEntry::page(physical_addr, attributes)
+        } else {
+            PageTableEntry::huge_page(physical_addr, attributes)
+        };
 
         invalidate_virtual_translation_cache(virtual_addr);
         Ok(())
@@ -227,7 +228,7 @@ impl AddressSpace {
 
         // SAFETY: Same original parent table safety.
         let parent = unsafe { self.table_mut(table) };
-        parent[index] = PageTableEntry::new(frame, EntryFlags::TABLE);
+        parent[index] = PageTableEntry::table(frame);
 
         Ok(frame)
     }
@@ -264,55 +265,28 @@ const ENTRY_COUNT: usize = 512;
 
 const ADDR_MASK: u64 = ((1 << 52) - 1) & !0xFFF; // bits 12..=51
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct EntryFlags(u64);
-
-impl EntryFlags {
-    const PRESENT: Self = Self(1 << 0);
-    const WRITABLE: Self = Self(1 << 1);
-    const USER_ACCESSIBLE: Self = Self(1 << 2);
-
-    const HUGE: Self = Self(1 << 7);
-    const NO_EXECUTE: Self = Self(1 << 63);
-
-    const TABLE: Self = Self(Self::PRESENT.0 | Self::WRITABLE.0 | Self::USER_ACCESSIBLE.0);
-
-    const fn contains(self, other: Self) -> bool {
-        self.0 & other.0 == other.0
-    }
+mod bits {
+    pub const PRESENT: u64 = 1 << 0;
+    pub const WRITABLE: u64 = 1 << 1;
+    pub const USER: u64 = 1 << 2;
+    pub const CACHE_DISABLE: u64 = 1 << 4;
+    pub const HUGE: u64 = 1 << 7;
+    pub const GLOBAL: u64 = 1 << 8;
+    pub const NO_EXECUTE: u64 = 1 << 63;
 }
 
-impl BitOr for EntryFlags {
-    type Output = Self;
+impl MapAttributes {
+    fn entry_bits(self) -> u64 {
+        use bits::*;
 
-    fn bitor(self, rhs: Self) -> Self::Output {
-        Self(self.0 | rhs.0)
-    }
-}
-
-impl BitOrAssign for EntryFlags {
-    fn bitor_assign(&mut self, rhs: Self) {
-        self.0 |= rhs.0;
-    }
-}
-
-impl From<Permissions> for EntryFlags {
-    fn from(permissions: Permissions) -> Self {
-        let mut flags = Self::PRESENT;
-
-        if permissions.writable {
-            flags |= Self::WRITABLE;
+        match self {
+            MapAttributes::KernelReadOnly => NO_EXECUTE,
+            MapAttributes::KernelReadWrite => WRITABLE | NO_EXECUTE,
+            MapAttributes::KernelReadExecute => 0,
+            MapAttributes::UserReadWrite => WRITABLE | NO_EXECUTE | USER,
+            MapAttributes::UserReadExecute => USER,
+            MapAttributes::Device => WRITABLE | NO_EXECUTE | CACHE_DISABLE,
         }
-
-        if permissions.user_accessible {
-            flags |= Self::USER_ACCESSIBLE;
-        }
-
-        if !permissions.executable {
-            flags |= Self::NO_EXECUTE;
-        }
-
-        flags
     }
 }
 
@@ -323,25 +297,33 @@ struct PageTableEntry(u64);
 impl PageTableEntry {
     const EMPTY: Self = Self(0);
 
-    fn new(addr: PhysicalAddr, flags: EntryFlags) -> Self {
-        debug_assert!(
-            addr.as_u64() & !ADDR_MASK == 0,
-            "invalid address in an entry: {addr:#x}"
-        );
-
-        Self(addr.as_u64() | flags.0)
+    fn page(addr: PhysicalAddr, attributes: MapAttributes) -> Self {
+        Self::with_bits(addr, attributes.entry_bits())
     }
 
-    fn flags(self) -> EntryFlags {
-        EntryFlags(self.0 & !ADDR_MASK)
+    fn huge_page(addr: PhysicalAddr, attributes: MapAttributes) -> Self {
+        Self::with_bits(addr, attributes.entry_bits() | bits::HUGE)
+    }
+
+    fn table(addr: PhysicalAddr) -> Self {
+        Self::with_bits(addr, bits::WRITABLE | bits::USER)
+    }
+
+    fn with_bits(addr: PhysicalAddr, bits: u64) -> Self {
+        debug_assert!(
+            addr.as_u64() & !ADDR_MASK == 0,
+            "invalid addr in an entry: #{addr:#x}"
+        );
+
+        Self(addr.as_u64() | bits | bits::PRESENT)
     }
 
     fn is_present(self) -> bool {
-        self.flags().contains(EntryFlags::PRESENT)
+        self.0 & bits::PRESENT != 0
     }
 
     fn is_huge(self) -> bool {
-        self.flags().contains(EntryFlags::HUGE)
+        self.0 & bits::HUGE != 0
     }
 
     fn addr(self) -> PhysicalAddr {
