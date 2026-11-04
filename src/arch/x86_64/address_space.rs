@@ -1,6 +1,6 @@
 use core::arch::x86_64::__cpuid;
 use core::fmt;
-use core::ops::{Index, IndexMut, Range};
+use core::ops::{BitOrAssign, Index, IndexMut, Range};
 use core::{arch::asm, ops::BitOr};
 
 use crate::mem::addr::{PhysicalAddr, VirtualAddr};
@@ -52,26 +52,30 @@ pub fn supported_map_sizes() -> &'static [MapSize] {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Permissions(u8);
-
-impl Permissions {
-    pub const READ: Self = Self(1 << 0);
-    pub const WRITE: Self = Self(1 << 1);
-    pub const EXECUTE: Self = Self(1 << 2);
-    pub const USER: Self = Self(1 << 3);
-
-    pub const fn contains(self, other: Self) -> bool {
-        self.0 & other.0 == other.0
-    }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Permissions {
+    pub writable: bool,
+    pub executable: bool,
+    pub user_accessible: bool,
 }
 
-impl BitOr for Permissions {
-    type Output = Self;
+impl Permissions {
+    pub const READ_ONLY: Self = Self {
+        writable: false,
+        executable: false,
+        user_accessible: false,
+    };
 
-    fn bitor(self, rhs: Self) -> Self::Output {
-        Self(self.0 | rhs.0)
-    }
+    pub const READ_WRITE: Self = Self {
+        writable: true,
+        executable: false,
+        ..Self::READ_ONLY
+    };
+
+    pub const READ_EXECUTE: Self = Self {
+        executable: true,
+        ..Self::READ_ONLY
+    };
 }
 
 #[derive(Debug)]
@@ -84,7 +88,6 @@ pub enum MapError {
 pub struct AddressSpace {
     root: PhysicalAddr,
     mapping: MemoryAddressMapping,
-    no_execute_enabled: bool,
 }
 
 impl AddressSpace {
@@ -95,7 +98,6 @@ impl AddressSpace {
         Self {
             root: active_root_table(),
             mapping,
-            no_execute_enabled: no_execute_enabled(),
         }
     }
 
@@ -114,7 +116,6 @@ impl AddressSpace {
         let mut space = Self {
             root: frame,
             mapping,
-            no_execute_enabled: no_execute_enabled(),
         };
 
         // SAFETY: Guaranteed by the one who calls.
@@ -152,7 +153,11 @@ impl AddressSpace {
         for &index in &indices[..leaf_level] {
             table = self.next_table(table, index, frames)?;
         }
-        let flags = self.entry_flags(permissions, size);
+
+        let mut flags = EntryFlags::from(permissions);
+        if size != SIZE_4K {
+            flags |= EntryFlags::HUGE;
+        }
 
         // SAFETY: `table` is a valid table, obtained above.
         let entry = &mut unsafe { self.table_mut(table) }[indices[leaf_level]];
@@ -197,41 +202,18 @@ impl AddressSpace {
         }
     }
 
-    fn entry_flags(&self, permissions: Permissions, size: MapSize) -> u64 {
-        debug_assert!(
-            permissions.contains(Permissions::READ),
-            "x86_64 does not have non-readable mappings"
-        );
-
-        let mut flags = PRESENT;
-        if permissions.contains(Permissions::WRITE) {
-            flags |= WRITABLE;
-        }
-        if permissions.contains(Permissions::USER) {
-            flags |= USER_ACCESSIBLE;
-        }
-        if !permissions.contains(Permissions::EXECUTE) && self.no_execute_enabled {
-            flags |= NO_EXECUTE;
-        }
-        if size != SIZE_4K {
-            flags |= HUGE;
-        }
-
-        flags
-    }
-
     fn next_table(
         &mut self,
         table: PhysicalAddr,
         index: usize,
         frames: &mut impl FrameAllocator,
     ) -> Result<PhysicalAddr, MapError> {
-        // SAFETY: `table` came from `self.p4` or from a valid present entry.
+        // SAFETY: `table` came from `self.root` or from a valid present entry.
         let entry = unsafe { self.table_mut(table) }[index];
 
         if entry.is_present() {
             return if entry.is_huge() {
-                return Err(MapError::Conflict);
+                Err(MapError::Conflict)
             } else {
                 Ok(entry.addr())
             };
@@ -245,7 +227,7 @@ impl AddressSpace {
 
         // SAFETY: Same original parent table safety.
         let parent = unsafe { self.table_mut(table) };
-        parent[index] = PageTableEntry::new(frame, PRESENT | WRITABLE);
+        parent[index] = PageTableEntry::new(frame, EntryFlags::TABLE);
 
         Ok(frame)
     }
@@ -270,7 +252,7 @@ impl AddressSpace {
     unsafe fn table(&self, physical_addr: PhysicalAddr) -> &PageTable {
         // SAFETY: Guaranteed by the caller.
         unsafe {
-            &mut *self
+            &*self
                 .mapping
                 .physical_to_virtual(physical_addr)
                 .as_mut_ptr::<PageTable>()
@@ -282,11 +264,57 @@ const ENTRY_COUNT: usize = 512;
 
 const ADDR_MASK: u64 = ((1 << 52) - 1) & !0xFFF; // bits 12..=51
 
-const PRESENT: u64 = 1 << 0;
-const WRITABLE: u64 = 1 << 1;
-const USER_ACCESSIBLE: u64 = 1 << 2;
-const HUGE: u64 = 1 << 7;
-const NO_EXECUTE: u64 = 1 << 63;
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct EntryFlags(u64);
+
+impl EntryFlags {
+    const PRESENT: Self = Self(1 << 0);
+    const WRITABLE: Self = Self(1 << 1);
+    const USER_ACCESSIBLE: Self = Self(1 << 2);
+
+    const HUGE: Self = Self(1 << 7);
+    const NO_EXECUTE: Self = Self(1 << 63);
+
+    const TABLE: Self = Self(Self::PRESENT.0 | Self::WRITABLE.0 | Self::USER_ACCESSIBLE.0);
+
+    const fn contains(self, other: Self) -> bool {
+        self.0 & other.0 == other.0
+    }
+}
+
+impl BitOr for EntryFlags {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0 | rhs.0)
+    }
+}
+
+impl BitOrAssign for EntryFlags {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
+    }
+}
+
+impl From<Permissions> for EntryFlags {
+    fn from(permissions: Permissions) -> Self {
+        let mut flags = Self::PRESENT;
+
+        if permissions.writable {
+            flags |= Self::WRITABLE;
+        }
+
+        if permissions.user_accessible {
+            flags |= Self::USER_ACCESSIBLE;
+        }
+
+        if !permissions.executable {
+            flags |= Self::NO_EXECUTE;
+        }
+
+        flags
+    }
+}
 
 #[repr(transparent)]
 #[derive(Clone, Copy)]
@@ -295,21 +323,25 @@ struct PageTableEntry(u64);
 impl PageTableEntry {
     const EMPTY: Self = Self(0);
 
-    fn new(addr: PhysicalAddr, flags: u64) -> Self {
+    fn new(addr: PhysicalAddr, flags: EntryFlags) -> Self {
         debug_assert!(
             addr.as_u64() & !ADDR_MASK == 0,
             "invalid address in an entry: {addr:#x}"
         );
 
-        Self(addr.as_u64() | flags)
+        Self(addr.as_u64() | flags.0)
+    }
+
+    fn flags(self) -> EntryFlags {
+        EntryFlags(self.0 & !ADDR_MASK)
     }
 
     fn is_present(self) -> bool {
-        self.0 & PRESENT != 0
+        self.flags().contains(EntryFlags::PRESENT)
     }
 
     fn is_huge(self) -> bool {
-        self.0 & HUGE != 0
+        self.flags().contains(EntryFlags::HUGE)
     }
 
     fn addr(self) -> PhysicalAddr {
@@ -354,20 +386,6 @@ pub fn supports_1g_pages() -> bool {
     }
 
     __cpuid(0x8000_0001).edx & PDPE1GB != 0
-}
-
-fn no_execute_enabled() -> bool {
-    const EFER: u32 = 0xC000_0080;
-    const NXE: u64 = 1 << 11;
-
-    let (low, high): (u32, u32);
-
-    // SAFETY: there are no side effects to reading EFER register.
-    unsafe {
-        asm!("rdmsr", in("ecx") EFER, out("eax") low, out("edx") high, options(nomem, nostack, preserves_flags))
-    };
-
-    (u64::from(high) << 32 | u64::from(low)) & NXE != 0
 }
 
 fn page_table_indices(virtual_addr: VirtualAddr) -> [usize; 4] {

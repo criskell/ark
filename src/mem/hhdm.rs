@@ -80,7 +80,7 @@ pub unsafe fn init(
                     mapping.physical_to_virtual(current_physical_addr),
                     current_physical_addr,
                     size,
-                    Permissions::READ | Permissions::WRITE,
+                    Permissions::READ_WRITE,
                     frames,
                 )
                 .expect("failed to mount HHDM map");

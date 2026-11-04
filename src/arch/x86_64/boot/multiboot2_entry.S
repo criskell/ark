@@ -23,6 +23,7 @@ enter:
   call verify_multiboot
   call verify_cpuid_enabled
   call verify_long_mode
+  call verify_no_execute
   call setup_paging_tables_for_identity_map
   call enable_paging
 
@@ -44,10 +45,10 @@ enable_paging:
   orl $(1 << 5), %eax
   movl %eax, %cr4
 
-  # Enable long mode bit in EFER (Extended Feature Enable Register)
+  # Enable long mode bit and no execute page bit in EFER (Extended Feature Enable Register)
   movl $0xC0000080, %ecx # EFER register is at 0xC0000080 address
   rdmsr # Result = %eax
-  orl $(1 << 8), %eax
+  orl $((1 << 8) | (1 << 11)), %eax
   wrmsr
 
   # Enable paging in CR0
@@ -132,6 +133,20 @@ verify_long_mode:
 .no_long_mode:
   mov $'2', %al
   jmp display_error
+
+verify_no_execute:
+    movl $0x80000001, %eax
+    cpuid
+
+    # Test NX bit
+    testl $(1 << 20), %edx
+    jz .no_no_execute
+
+    ret
+
+.no_no_execute:
+    mov $'3', %al
+    jmp display_error
 
 display_error:
   movl $0x4F524F45, 0xB8000 # 'E', 'R'
