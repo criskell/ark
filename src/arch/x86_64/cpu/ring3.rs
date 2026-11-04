@@ -1,4 +1,4 @@
-use crate::arch::x86_64::gdt;
+use crate::arch::x86_64::cpu::gdt;
 use core::arch::asm;
 
 fn get_cs_register() -> u16 {

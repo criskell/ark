@@ -1,3 +1,3 @@
 #[macro_use]
-pub mod debug;
+pub mod vga;
 pub mod serial;

@@ -1,6 +1,6 @@
 use core::arch::asm;
 
-#[repr(C, packed)]
+#[repr(transparent)]
 #[derive(Eq, PartialEq, Debug, Clone, Copy, Default)]
 pub struct GdtEntry(u64);
 

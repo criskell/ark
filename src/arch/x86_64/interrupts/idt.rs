@@ -1,9 +1,6 @@
 use core::arch::asm;
 
-use crate::{
-    arch::x86_64::{interrupts, io},
-    println,
-};
+use crate::arch::x86_64::{cpu::io, interrupts};
 
 #[repr(C, packed)]
 #[derive(Copy, Clone)]

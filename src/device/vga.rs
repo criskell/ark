@@ -4,10 +4,7 @@ use core::ptr;
 use spin::Mutex;
 
 use super::serial::SERIAL;
-use crate::{
-    arch::{interrupts, io},
-    mem::util,
-};
+use crate::arch::{cpu::io, interrupts};
 
 const VGA_BUFFER: *mut u8 = 0xb8000 as *mut u8;
 
@@ -53,7 +50,7 @@ impl VGAScreen {
             }
 
             character_byte => {
-                let offset = (2 * (self.y * 80 + self.x)) as usize;
+                let offset = (2 * (self.y * VGA_WIDTH + self.x)) as usize;
 
                 unsafe {
                     *VGA_BUFFER.add(offset) = character_byte;
@@ -64,7 +61,7 @@ impl VGAScreen {
             }
         }
 
-        if self.x >= 80 {
+        if self.x >= VGA_WIDTH {
             self.x = 0;
             self.y += 1;
         }
@@ -74,13 +71,15 @@ impl VGAScreen {
     }
 
     pub fn clear_screen(&mut self) {
-        for line in 0..25 {
-            unsafe {
-                util::memsetw(
-                    VGA_BUFFER.add(line * 80 * 2) as *mut u16,
-                    BLANK_CHARACTER,
-                    80,
-                );
+        for line in 0..VGA_HEIGHT as usize {
+            let current_line_ptr = unsafe { VGA_BUFFER.add(line * 80 * 2) } as *mut u16;
+
+            for character_idx in 0..VGA_WIDTH {
+                unsafe {
+                    current_line_ptr
+                        .add(character_idx as usize)
+                        .write_volatile(BLANK_CHARACTER);
+                }
             }
         }
 
@@ -113,18 +112,18 @@ impl VGAScreen {
             );
 
             // Clear last line.
-            util::memsetw(
-                VGA_BUFFER.add((VGA_HEIGHT as usize - 1) * 80 * 2) as *mut u16,
-                BLANK_CHARACTER,
-                80,
-            );
+            let last_line = VGA_BUFFER.add((VGA_HEIGHT as usize - 1) * 80 * 2) as *mut u16;
+
+            for i in 0..80 {
+                last_line.add(i).write_volatile(BLANK_CHARACTER);
+            }
         }
 
         self.y = VGA_HEIGHT - 1;
     }
 
     fn update_hardware_cursor(&self) {
-        let index = self.y * 80 + self.x;
+        let index = self.y * VGA_WIDTH + self.x;
 
         unsafe {
             // Write high byte.

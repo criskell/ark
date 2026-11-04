@@ -9,6 +9,8 @@ PHDRS {
 SECTIONS {
   . = 1M;
 
+  __kernel_start = .;
+
   .multiboot : ALIGN(8) {
     KEEP(*(.multiboot))
   } :text
@@ -29,4 +31,6 @@ SECTIONS {
     *(.bss .bss.*)
     *(COMMON)
   } :data
+
+  __kernel_end = .;
 }

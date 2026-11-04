@@ -32,6 +32,15 @@ impl MemoryRegion {
     pub fn range(&self) -> Range<u64> {
         self.start_address..self.end()
     }
+
+    pub const fn is_ram(&self) -> bool {
+        matches!(
+            self.kind,
+            MemoryRegionKind::Usable
+                | MemoryRegionKind::AcpiReclaimable
+                | MemoryRegionKind::AcpiNvs
+        )
+    }
 }
 
 #[derive(Debug)]

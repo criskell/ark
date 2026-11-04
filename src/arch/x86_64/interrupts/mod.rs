@@ -1,5 +1,7 @@
 use core::arch::asm;
 
+pub mod idt;
+
 #[inline]
 pub fn is_enabled() -> bool {
     let mut eflags: u32;

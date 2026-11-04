@@ -4,7 +4,11 @@
 
 use core::panic::PanicInfo;
 
-use crate::{arch::idt, boot::KernelBootContext, mem::OffsetMapping};
+use crate::{
+    arch::{cpu, interrupts::idt},
+    boot::KernelBootContext,
+    mem::{addr::PhysicalAddr, pmm::FrameAllocator},
+};
 
 #[macro_use]
 pub mod device;
@@ -16,20 +20,28 @@ pub mod mem;
 pub fn kernel_enter(context: KernelBootContext) -> ! {
     idt::init_idt();
 
-    let mapping = OffsetMapping(0xFFFF_8000_0000_0000);
+    let (frame_allocator, memory_mapping, hhdm_stats) = mem::init(context.memory_map);
 
-    let vga = mapping.virtual_to_physical(0xb8000) as *mut u16;
+    for (size, bytes) in hhdm_stats.iter() {
+        println!("direct map in {size}: {} MiB", bytes >> 20);
+    }
+
+    println!("free: {} MiB", frame_allocator.free_frames() * 4 / 1024);
+
+    let vga = memory_mapping
+        .physical_to_virtual(PhysicalAddr::new(0xb8000))
+        .as_mut_ptr::<u16>();
 
     unsafe {
         vga.write_volatile(0x0F41);
     }
 
-    loop {}
+    cpu::idle_forever()
 }
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     println!("{}", info);
 
-    loop {}
+    cpu::halt()
 }

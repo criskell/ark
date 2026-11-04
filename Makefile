@@ -1,13 +1,13 @@
 arch ?= x86_64
 kernel := output/$(arch)/disk/boot/kernel.bin
-ld_script := src/arch/$(arch)/linker.ld
+ld_script := src/arch/$(arch)/boot/linker.ld
 output := output/$(arch)
 disk := $(output)/disk
 kernel_library := target/$(arch)/debug/libark.a
 grub_mkrescue ?= $(shell command -v grub-mkrescue || command -v grub2-mkrescue)
 
-assembly_files := $(wildcard src/arch/$(arch)/*.S)
-object_files := $(patsubst src/arch/$(arch)/%.S, output/$(arch)/%.o, $(assembly_files))
+assembly_files := $(wildcard src/arch/$(arch)/boot/*.S)
+object_files := $(patsubst src/arch/$(arch)/boot/%.S, output/$(arch)/boot/%.o, $(assembly_files))
 
 .PHONY: all build clean run kernel
 

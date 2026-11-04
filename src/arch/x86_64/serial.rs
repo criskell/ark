@@ -1,4 +1,4 @@
-use crate::arch::io;
+use crate::arch::cpu::io;
 
 const COM1_SERIAL_PORT: u16 = 0x3F8;
 
