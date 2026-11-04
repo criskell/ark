@@ -20,6 +20,7 @@ run: build
 	qemu-system-x86_64 -cdrom output/$(arch)/ark.iso \
 		-chardev file,id=seabios,path=seabios.log \
 		-device isa-debugcon,iobase=0x402,chardev=seabios \
+		-cpu max \
 		-m 4G
 
 build: $(kernel)

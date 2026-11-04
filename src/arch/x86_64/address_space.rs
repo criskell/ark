@@ -16,9 +16,9 @@ impl MapSize {
 
     const fn leaf_page_table_level(self) -> usize {
         match self.0 {
-            0x400_0000 => 1, // 1 GiB
-            0x20_0000 => 2,  // 2 MiB
-            0x1000 => 3,     // 4 KiB
+            0x4000_0000 => 1, // 1 GiB
+            0x20_0000 => 2,   // 2 MiB
+            0x1000 => 3,      // 4 KiB
             _ => unreachable!(),
         }
     }
@@ -210,7 +210,7 @@ impl AddressSpace {
         if permissions.contains(Permissions::USER) {
             flags |= USER_ACCESSIBLE;
         }
-        if permissions.contains(Permissions::EXECUTE) && self.no_execute_enabled {
+        if !permissions.contains(Permissions::EXECUTE) && self.no_execute_enabled {
             flags |= NO_EXECUTE;
         }
         if size != SIZE_4K {
