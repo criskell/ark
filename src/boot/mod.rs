@@ -105,7 +105,7 @@ impl<const C: usize> MemoryMap<C> {
             ];
 
             for (piece_start, piece_end, piece_kind) in pieces {
-                if piece_start != piece_end {
+                if piece_start < piece_end {
                     self.push(MemoryRegion {
                         start_address: piece_start,
                         size: piece_end - piece_start,

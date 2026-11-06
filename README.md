@@ -11,3 +11,7 @@ Install these packages:
 ```
 sudo dnf install grub2-tools-extra grub2-pc-modules xorriso mtools
 ```
+
+## Characteristics
+
+- The code should be readable and self-explanatory

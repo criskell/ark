@@ -308,7 +308,9 @@ impl State {
 }
 
 fn storage_size(capacity: usize) -> u64 {
-    ((capacity * size_of::<Range>()) as u64).next_multiple_of(FRAME_SIZE)
+    let capacity_in_bytes = (capacity * size_of::<Range>()) as u64;
+
+    capacity_in_bytes.next_multiple_of(FRAME_SIZE)
 }
 
 #[allow(clippy::large_enum_variant)]
