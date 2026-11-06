@@ -7,7 +7,7 @@ use core::panic::PanicInfo;
 use crate::{
     arch::{cpu, interrupts::idt},
     boot::KernelBootContext,
-    mem::{addr::PhysicalAddr, pmm::FrameAllocator},
+    mem::{addr::PhysicalAddr, pmm},
 };
 
 #[macro_use]
@@ -20,15 +20,15 @@ pub mod mem;
 pub fn kernel_enter(context: KernelBootContext) -> ! {
     idt::init_idt();
 
-    let (frame_allocator, memory_mapping, hhdm_stats) = mem::init(context.memory_map);
+    let hhdm_stats = mem::init(&context);
 
     for (size, bytes) in hhdm_stats.iter() {
         println!("direct map in {size}: {} MiB", bytes >> 20);
     }
 
-    println!("free: {} MiB", frame_allocator.free_frames() * 4 / 1024);
+    println!("free: {} MiB", pmm::free_frames() * 4 / 1024);
 
-    let vga = memory_mapping
+    let vga = mem::direct_map()
         .physical_to_virtual(PhysicalAddr::new(0xb8000))
         .as_mut_ptr::<u16>();
 

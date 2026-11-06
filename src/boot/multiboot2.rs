@@ -1,11 +1,32 @@
-use core::mem::size_of;
+use core::{mem::size_of, ops::Range};
 
 use super::{KernelBootContext, MemoryMap, MemoryRegion, MemoryRegionKind};
-use crate::kernel_enter;
+use crate::{
+    boot::BootDirectMap,
+    kernel_enter,
+    mem::addr::{PhysicalAddr, VirtualAddr},
+};
 
 const MULTIBOOT2_MAGIC: u32 = 0x36d76289;
 const TAG_END: u32 = 0;
 const TAG_MEMORY_MAP: u32 = 6;
+
+const BOOT_DIRECT_MAP: BootDirectMap = BootDirectMap {
+    offset: VirtualAddr::new(!0u64 << 47),
+    limit: PhysicalAddr::new(1 << 30), // 1 GiB
+};
+
+unsafe extern "C" {
+    static __kernel_start: u8;
+    static __kernel_end: u8;
+}
+
+fn kernel_image() -> Range<u64> {
+    let start = &raw const __kernel_start as u64;
+    let end = &raw const __kernel_end as u64;
+
+    start..end
+}
 
 #[no_mangle]
 pub extern "C" fn multiboot2_kernel_enter(magic: u32, boot_info_addr: u32) -> ! {
@@ -27,8 +48,15 @@ impl KernelBootContext {
             }
         }
 
+        let mut memory_map = memory_map.expect("multiboot2 bootloader does not give memory map");
+
+        memory_map
+            .mark(kernel_image(), MemoryRegionKind::Kernel)
+            .expect("the memory map has too many regions to mark the kernel image");
+
         KernelBootContext {
-            memory_map: memory_map.expect("bootloader does not give memory map"),
+            memory_map: memory_map,
+            direct_map: BOOT_DIRECT_MAP,
         }
     }
 }

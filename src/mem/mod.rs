@@ -1,25 +1,17 @@
+use spin::Once;
+
 use crate::{
-    boot::MemoryMap,
+    boot::KernelBootContext,
     mem::{
         addr::{PhysicalAddr, VirtualAddr},
-        hhdm::{Stats, BOOT_HHDM_LIMIT, HHDM_OFFSET},
-        pmm::FrameAllocator,
+        direct_map::Stats,
+        pmm::memblock::MemBlock,
     },
 };
 
 pub mod addr;
-pub mod hhdm;
+pub mod direct_map;
 pub mod pmm;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MapAttributes {
-    KernelReadOnly,
-    KernelReadWrite,
-    KernelReadExecute,
-    UserReadWrite,
-    UserReadExecute,
-    Device,
-}
 
 #[repr(transparent)]
 #[derive(Copy, Clone)]
@@ -28,7 +20,7 @@ pub struct MemoryAddressMapping {
 }
 
 impl MemoryAddressMapping {
-    pub fn from_hhdm_offset(hhdm_offset: VirtualAddr) -> Self {
+    pub const fn from_hhdm_offset(hhdm_offset: VirtualAddr) -> Self {
         MemoryAddressMapping {
             hhdm_offset: hhdm_offset.as_u64(),
         }
@@ -45,29 +37,36 @@ impl MemoryAddressMapping {
     }
 }
 
-unsafe extern "C" {
-    static __kernel_start: u8;
-    static __kernel_end: u8;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MapAttributes {
+    KernelReadOnly,
+    KernelReadWrite,
+    KernelReadExecute,
+    UserReadWrite,
+    UserReadExecute,
+    Device,
 }
 
-pub fn init(memory_map: MemoryMap) -> (impl FrameAllocator, MemoryAddressMapping, Stats) {
-    let memory_address_mapping = MemoryAddressMapping::from_hhdm_offset(HHDM_OFFSET);
+static DIRECT_MAP: Once<MemoryAddressMapping> = Once::new();
 
-    let kernel_start = PhysicalAddr::new(&raw const __kernel_start as u64);
-    let kernel_end = PhysicalAddr::new(&raw const __kernel_end as u64);
-    let kernel_range = kernel_start..kernel_end;
+pub fn direct_map() -> MemoryAddressMapping {
+    *DIRECT_MAP.r#try().expect("mem::init has not run yet")
+}
 
-    let mut frame_allocator = pmm::init(
-        BOOT_HHDM_LIMIT,
-        memory_address_mapping,
-        &memory_map,
-        &[kernel_range],
-    );
+pub fn init(context: &KernelBootContext) -> Stats {
+    let boot_direct_map = context.direct_map;
+    let mapping =
+        *DIRECT_MAP.call_once(|| MemoryAddressMapping::from_hhdm_offset(boot_direct_map.offset));
 
-    // SAFETY: called a signle time during boot, before any code modifies the mapping.
-    let stats = unsafe { hhdm::init(&memory_map, memory_address_mapping, &mut frame_allocator) };
+    let memblock = MemBlock::new(&context.memory_map, boot_direct_map.limit);
 
-    frame_allocator.set_limit(PhysicalAddr::new(u64::MAX));
+    // SAFETY: called a single time during boot and memblock only hands out memory the boot direct map covers.
+    let stats = unsafe { direct_map::init(&context.memory_map, mapping, &memblock) };
 
-    (frame_allocator, memory_address_mapping, stats)
+    memblock.set_current_limit(PhysicalAddr::new(u64::MAX));
+    memblock.allow_resize();
+
+    pmm::init(memblock);
+
+    stats
 }

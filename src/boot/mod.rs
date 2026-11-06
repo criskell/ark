@@ -1,10 +1,13 @@
 use core::ops::Range;
 
+use crate::mem::addr::{PhysicalAddr, VirtualAddr};
+
 mod multiboot2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemoryRegionKind {
     Usable,
+    Kernel,
     AcpiReclaimable,
     AcpiNvs,
     Defective,
@@ -37,6 +40,7 @@ impl MemoryRegion {
         matches!(
             self.kind,
             MemoryRegionKind::Usable
+                | MemoryRegionKind::Kernel
                 | MemoryRegionKind::AcpiReclaimable
                 | MemoryRegionKind::AcpiNvs
         )
@@ -46,6 +50,7 @@ impl MemoryRegion {
 #[derive(Debug)]
 pub struct MemoryMapFull;
 
+#[derive(Copy, Clone)]
 pub struct MemoryMap<const C: usize = 128> {
     regions: [MemoryRegion; C],
     len: usize,
@@ -77,6 +82,41 @@ impl<const C: usize> MemoryMap<C> {
             .iter()
             .filter(|r| r.kind == MemoryRegionKind::Usable)
     }
+
+    pub fn mark(&mut self, range: Range<u64>, kind: MemoryRegionKind) -> Result<(), MemoryMapFull> {
+        let original = *self;
+        self.len = 0;
+
+        for region in original.regions() {
+            let start = region.start_address.max(range.start);
+            let end = region.end().min(range.end);
+
+            let is_intersecting = start < end;
+
+            if !is_intersecting {
+                self.push(*region)?;
+                continue;
+            }
+
+            let pieces = [
+                (region.start_address, start, region.kind), // before range
+                (start, end, kind),                         // inside range
+                (end, region.end(), region.kind),           // after range
+            ];
+
+            for (piece_start, piece_end, piece_kind) in pieces {
+                if piece_start != piece_end {
+                    self.push(MemoryRegion {
+                        start_address: piece_start,
+                        size: piece_end - piece_start,
+                        kind: piece_kind,
+                    })?;
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl Default for MemoryMap {
@@ -85,6 +125,13 @@ impl Default for MemoryMap {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct BootDirectMap {
+    pub offset: VirtualAddr,
+    pub limit: PhysicalAddr,
+}
+
 pub struct KernelBootContext {
     pub memory_map: MemoryMap,
+    pub direct_map: BootDirectMap,
 }

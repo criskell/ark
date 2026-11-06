@@ -1,50 +1,37 @@
 use core::{ops::Range, slice};
 
-use crate::{
-    boot::MemoryMap,
-    mem::{
-        addr::PhysicalAddr,
-        pmm::{FrameAllocator, FRAME_SIZE},
-        MemoryAddressMapping,
-    },
+use crate::mem::{
+    self,
+    addr::PhysicalAddr,
+    pmm::{memblock::MemBlock, FRAME_SIZE},
 };
 
 pub struct BitmapFrameAllocator {
     free_frames_bitmap: &'static mut [u64],
     next_word_index: usize,
     free_frames: usize,
-    limit: PhysicalAddr,
-    mapping: MemoryAddressMapping,
 }
 
 impl BitmapFrameAllocator {
-    pub const fn new(limit: PhysicalAddr, mapping: MemoryAddressMapping) -> Self {
+    pub const fn new() -> Self {
         Self {
             free_frames_bitmap: &mut [],
             next_word_index: 0,
             free_frames: 0,
-            limit,
-            mapping,
         }
     }
 
-    pub fn init(&mut self, memory_map: &MemoryMap, reserved_regions: &[Range<PhysicalAddr>]) {
-        let ram_end = memory_map
-            .usable()
-            .map(|region| PhysicalAddr::new(region.end()))
-            .max()
-            .expect("the memory has no usable RAM");
-
-        let words = ((ram_end.as_u64() / FRAME_SIZE) as usize).div_ceil(64);
+    pub fn init(&mut self, memblock: MemBlock) {
+        let words = ((memblock.memory_end().as_u64() / FRAME_SIZE) as usize).div_ceil(64);
         let bitmap_size = (words * 8) as u64;
-
-        let bitmap_start = find_free_area(memory_map, bitmap_size, reserved_regions, self.limit)
+        let bitmap_start = memblock
+            .allocate_contiguous(bitmap_size)
             .expect("there is no space for the frame bitmap");
 
-        // SAFETY: Reserved below, and this is free, accessible RAM.
+        // SAFETY: memblock reserved thius memory, and the direct map covers all RAM by now.
         self.free_frames_bitmap = unsafe {
             slice::from_raw_parts_mut(
-                self.mapping
+                mem::direct_map()
                     .physical_to_virtual(bitmap_start)
                     .as_mut_ptr::<u64>(),
                 words,
@@ -52,37 +39,9 @@ impl BitmapFrameAllocator {
         };
         self.free_frames_bitmap.fill(0);
 
-        for region in memory_map.usable() {
-            let start = PhysicalAddr::new(region.start_address).align_up(FRAME_SIZE);
-            let end = PhysicalAddr::new(region.end()).align_down(FRAME_SIZE);
-
+        memblock.for_each_free(|start, end| {
             self.set_availability_range(start..end, true);
-        }
-
-        self.reserve(PhysicalAddr::new(0)..PhysicalAddr::new(FRAME_SIZE));
-
-        for range in reserved_regions {
-            self.reserve(range.clone());
-        }
-
-        self.reserve(bitmap_start..bitmap_start + bitmap_size);
-    }
-
-    pub fn reserve(&mut self, range: Range<PhysicalAddr>) {
-        let start = range.start.align_down(FRAME_SIZE);
-        let end = range.end.min(self.covered()).align_up(FRAME_SIZE);
-
-        self.set_availability_range(start..end, false);
-    }
-
-    fn covered(&self) -> PhysicalAddr {
-        PhysicalAddr::new(self.free_frames_bitmap.len() as u64 * 64 * FRAME_SIZE)
-    }
-
-    fn searchable_words(&self) -> usize {
-        let limit_words = self.limit.as_u64() / FRAME_SIZE / 64;
-
-        limit_words.min(self.free_frames_bitmap.len() as u64) as usize
+        });
     }
 
     fn set_availability_range(&mut self, range: Range<PhysicalAddr>, free: bool) {
@@ -125,11 +84,13 @@ impl BitmapFrameAllocator {
             self.free_frames -= 1;
         }
     }
-}
 
-impl FrameAllocator for BitmapFrameAllocator {
-    fn allocate(&mut self) -> Option<PhysicalAddr> {
-        let words_count = self.searchable_words();
+    pub fn free_frames(&self) -> usize {
+        self.free_frames
+    }
+
+    pub fn allocate(&mut self) -> Option<PhysicalAddr> {
+        let words_count = self.free_frames_bitmap.len();
 
         for i in 0..words_count {
             let word_index = (self.next_word_index + i) % words_count;
@@ -148,47 +109,11 @@ impl FrameAllocator for BitmapFrameAllocator {
         None
     }
 
-    fn deallocate(&mut self, frame: PhysicalAddr) {
+    pub fn deallocate(&mut self, frame: PhysicalAddr) {
         assert!(frame.is_aligned(FRAME_SIZE), "frame misaligned: {frame:?}");
         let index = self.frame_index(frame);
 
         assert!(!self.is_free(index), "frame double free: {frame:?}");
         self.set_free(index, true);
     }
-
-    fn set_limit(&mut self, limit: PhysicalAddr) {
-        assert!(limit >= self.limit, "the limit can only increase");
-
-        self.limit = limit;
-    }
-
-    fn free_frames(&self) -> usize {
-        self.free_frames
-    }
-}
-
-fn find_free_area(
-    memory_map: &MemoryMap,
-    size: u64,
-    reserved_regions: &[Range<PhysicalAddr>],
-    limit: PhysicalAddr,
-) -> Option<PhysicalAddr> {
-    for region in memory_map.usable() {
-        let mut start =
-            PhysicalAddr::new(region.start_address.max(FRAME_SIZE)).align_up(FRAME_SIZE);
-
-        while let Some(reserved_region) = reserved_regions.iter().find(|reserved_region| {
-            reserved_region.start < start + size && start < reserved_region.end
-        }) {
-            start = reserved_region.end.align_up(FRAME_SIZE);
-        }
-
-        let end = start + size;
-
-        if end <= PhysicalAddr::new(region.end()) && end <= limit {
-            return Some(start);
-        }
-    }
-
-    None
 }

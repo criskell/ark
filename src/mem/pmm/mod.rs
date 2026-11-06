@@ -1,30 +1,37 @@
-use core::ops::Range;
+use spin::Mutex;
 
-use crate::{
-    boot::MemoryMap,
-    mem::{addr::PhysicalAddr, pmm::bitmap::BitmapFrameAllocator, MemoryAddressMapping},
-};
+use crate::mem::addr::PhysicalAddr;
 
 pub mod bitmap;
+pub(super) mod memblock;
 
 pub const FRAME_SIZE: u64 = 4096;
 
+type SelectedAllocator = bitmap::BitmapFrameAllocator;
+
+static ALLOCATOR: Mutex<SelectedAllocator> = Mutex::new(SelectedAllocator::new());
+
 pub trait FrameAllocator {
-    fn allocate(&mut self) -> Option<PhysicalAddr>;
-    fn deallocate(&mut self, frame: PhysicalAddr);
-    fn set_limit(&mut self, limit: PhysicalAddr);
-    fn free_frames(&self) -> usize;
+    fn allocate(&self) -> Option<PhysicalAddr>;
+    fn deallocate(&self, frame: PhysicalAddr);
 }
 
-pub fn init(
-    initial_mapping_limit: PhysicalAddr,
-    mapping: MemoryAddressMapping,
-    memory_map: &MemoryMap,
-    reserved_regions: &[Range<PhysicalAddr>],
-) -> impl FrameAllocator {
-    let mut allocator = BitmapFrameAllocator::new(initial_mapping_limit, mapping);
+pub struct Frames;
 
-    allocator.init(&memory_map, reserved_regions);
+impl FrameAllocator for Frames {
+    fn allocate(&self) -> Option<PhysicalAddr> {
+        ALLOCATOR.lock().allocate()
+    }
 
-    allocator
+    fn deallocate(&self, frame: PhysicalAddr) {
+        ALLOCATOR.lock().deallocate(frame)
+    }
+}
+
+pub(super) fn init(memblock: memblock::MemBlock) {
+    ALLOCATOR.lock().init(memblock);
+}
+
+pub fn free_frames() -> usize {
+    ALLOCATOR.lock().free_frames()
 }

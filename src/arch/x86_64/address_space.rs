@@ -109,7 +109,7 @@ impl AddressSpace {
     pub unsafe fn copy_current_except(
         excluding: Range<VirtualAddr>,
         mapping: MemoryAddressMapping,
-        frames: &mut impl FrameAllocator,
+        frames: &impl FrameAllocator,
     ) -> Result<Self, MapError> {
         assert!(excluding.start < excluding.end, "empty range");
 
@@ -139,7 +139,7 @@ impl AddressSpace {
         physical_addr: PhysicalAddr,
         size: MapSize,
         attributes: MapAttributes,
-        frames: &mut impl FrameAllocator,
+        frames: &impl FrameAllocator,
     ) -> Result<(), MapError> {
         assert!(
             virtual_addr.is_aligned(size.byte_count())
@@ -207,7 +207,7 @@ impl AddressSpace {
         &mut self,
         table: PhysicalAddr,
         index: usize,
-        frames: &mut impl FrameAllocator,
+        frames: &impl FrameAllocator,
     ) -> Result<PhysicalAddr, MapError> {
         // SAFETY: `table` came from `self.root` or from a valid present entry.
         let entry = unsafe { self.table_mut(table) }[index];

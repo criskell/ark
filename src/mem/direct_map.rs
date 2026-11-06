@@ -1,15 +1,12 @@
 use crate::{
-    arch::address_space::{self, AddressSpace, MapSize, Permissions},
+    arch::address_space::{self, AddressSpace, MapSize},
     boot::MemoryMap,
     mem::{
-        addr::{PhysicalAddr, VirtualAddr},
+        addr::PhysicalAddr,
         pmm::{FrameAllocator, FRAME_SIZE},
         MapAttributes, MemoryAddressMapping,
     },
 };
-
-pub const HHDM_OFFSET: VirtualAddr = VirtualAddr::new(!0u64 << 47);
-pub const BOOT_HHDM_LIMIT: PhysicalAddr = PhysicalAddr::new(1 << 30);
 
 const ISA_END: PhysicalAddr = PhysicalAddr::new(0x100000);
 
@@ -36,7 +33,7 @@ impl Stats {
 pub unsafe fn init(
     memory_map: &MemoryMap,
     mapping: MemoryAddressMapping,
-    frames: &mut impl FrameAllocator,
+    frames: &impl FrameAllocator,
 ) -> Stats {
     let ranges = memory_ranges(memory_map);
     let ram_end = ranges
