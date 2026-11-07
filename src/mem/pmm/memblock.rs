@@ -17,7 +17,6 @@ impl MemBlock {
     pub fn new(memory_map: &MemoryMap, limit: PhysicalAddr) -> Self {
         let mut state = State {
             memory: RegionList::new(),
-            can_resize: false,
             reserved: RegionList::new(),
             limit,
         };
@@ -46,10 +45,6 @@ impl MemBlock {
 
     pub fn set_current_limit(&self, limit: PhysicalAddr) {
         self.0.borrow_mut().limit = limit;
-    }
-
-    pub fn allow_resize(&self) {
-        self.0.borrow_mut().can_resize = true;
     }
 
     pub fn allocate_contiguous(&self, size: u64) -> Option<PhysicalAddr> {
@@ -129,7 +124,6 @@ struct State {
     memory: RegionList,
     reserved: RegionList,
     limit: PhysicalAddr,
-    can_resize: bool,
 }
 
 impl State {
@@ -265,11 +259,6 @@ impl State {
     }
 
     fn grow(&mut self, which: List, adding: Range) {
-        assert!(
-            self.can_resize,
-            "memblock: a region list if full and resizing is not allowed yet"
-        );
-
         let old_capacity = self.list(which).capacity();
         let new_capacity = old_capacity * 2;
         let new_size = storage_size(new_capacity);
