@@ -64,7 +64,6 @@ pub fn init(context: &KernelBootContext) -> Stats {
     let stats = unsafe { direct_map::init(&context.memory_map, mapping, &memblock) };
 
     memblock.set_current_limit(PhysicalAddr::new(u64::MAX));
-    memblock.allow_resize();
 
     pmm::init(memblock);
 

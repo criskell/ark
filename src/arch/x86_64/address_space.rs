@@ -1,7 +1,7 @@
+use core::arch::asm;
 use core::arch::x86_64::__cpuid;
 use core::fmt;
-use core::ops::{BitOrAssign, Index, IndexMut, Range};
-use core::{arch::asm, ops::BitOr};
+use core::ops::{Index, IndexMut, Range};
 
 use crate::mem::addr::{PhysicalAddr, VirtualAddr};
 use crate::mem::MapAttributes;
