@@ -16,24 +16,24 @@ pub mod pmm;
 #[repr(transparent)]
 #[derive(Copy, Clone)]
 pub struct MemoryAddressMapping {
-    hhdm_offset: u64,
+    direct_map_offset: u64,
 }
 
 impl MemoryAddressMapping {
-    pub const fn from_hhdm_offset(hhdm_offset: VirtualAddr) -> Self {
+    pub const fn from_hhdm_offset(direct_map_offset: VirtualAddr) -> Self {
         MemoryAddressMapping {
-            hhdm_offset: hhdm_offset.as_u64(),
+            direct_map_offset: direct_map_offset.as_u64(),
         }
     }
 
     pub fn virtual_to_physical(&self, virtual_addr: VirtualAddr) -> PhysicalAddr {
-        debug_assert!(virtual_addr.as_u64() >= self.hhdm_offset);
+        debug_assert!(virtual_addr.as_u64() >= self.direct_map_offset);
 
-        PhysicalAddr::new(virtual_addr.as_u64() - self.hhdm_offset)
+        PhysicalAddr::new(virtual_addr.as_u64() - self.direct_map_offset)
     }
 
     pub fn physical_to_virtual(&self, physical_addr: PhysicalAddr) -> VirtualAddr {
-        VirtualAddr::new(self.hhdm_offset + physical_addr.as_u64())
+        VirtualAddr::new(self.direct_map_offset + physical_addr.as_u64())
     }
 }
 
