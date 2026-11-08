@@ -271,6 +271,7 @@ mod bits {
     pub const USER: u64 = 1 << 2;
     pub const CACHE_DISABLE: u64 = 1 << 4;
     pub const HUGE: u64 = 1 << 7;
+    #[allow(dead_code)]
     pub const GLOBAL: u64 = 1 << 8;
     pub const NO_EXECUTE: u64 = 1 << 63;
 }
