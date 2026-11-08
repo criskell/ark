@@ -14,7 +14,10 @@ const INITIAL_CAPACITY: usize = 128;
 pub struct MemBlock(RefCell<State>);
 
 impl MemBlock {
-    pub fn new(memory_map: &MemoryMap, limit: PhysicalAddr) -> Self {
+    /// # Safety
+    ///
+    /// All physical memory below `limit` must be accessible through direct map.
+    pub unsafe fn new(memory_map: &MemoryMap, limit: PhysicalAddr) -> Self {
         let mut state = State {
             memory: RegionList::new(),
             reserved: RegionList::new(),
@@ -43,7 +46,10 @@ impl MemBlock {
         MemBlock(RefCell::new(state))
     }
 
-    pub fn set_current_limit(&self, limit: PhysicalAddr) {
+    /// # Safety
+    ///
+    /// All physical memory below `limit` must be accessible through the direct map.
+    pub unsafe fn set_current_limit(&self, limit: PhysicalAddr) {
         self.0.borrow_mut().limit = limit;
     }
 

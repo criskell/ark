@@ -58,12 +58,14 @@ pub fn init(context: &KernelBootContext) -> Stats {
     let mapping =
         *DIRECT_MAP.call_once(|| MemoryAddressMapping::from_hhdm_offset(boot_direct_map.offset));
 
-    let memblock = MemBlock::new(&context.memory_map, boot_direct_map.limit);
+    // SAFETY: the bootloader mapped everything below `boot_direct_map.limit`.
+    let memblock = unsafe { MemBlock::new(&context.memory_map, boot_direct_map.limit) };
 
     // SAFETY: called a single time during boot and memblock only hands out memory the boot direct map covers.
     let stats = unsafe { direct_map::init(&context.memory_map, mapping, &memblock) };
 
-    memblock.set_current_limit(PhysicalAddr::new(u64::MAX));
+    // SAFETY: `direct_map` has mapped all physical RAM.
+    unsafe { memblock.set_current_limit(PhysicalAddr::new(u64::MAX)) };
 
     pmm::init(memblock);
 
