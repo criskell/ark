@@ -273,8 +273,7 @@ impl State {
             .find(new_size, adding)
             .expect("memblock: no memory to grow a region list");
 
-        // SAFETY: range is free RAM, and resizing is only allowed once the direct map
-        // covers all RAW below the limit.
+        // SAFETY: start is free ram :D
         let new_slots: &'static mut [Range] = unsafe {
             slice::from_raw_parts_mut(
                 mem::direct_map()
