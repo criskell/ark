@@ -153,7 +153,7 @@ impl State {
         }
 
         if self.list(which).is_full() {
-            self.grow(which, Range::EMPTY);
+            self.grow(which, range);
         }
 
         let list = self.list_mut(which);
